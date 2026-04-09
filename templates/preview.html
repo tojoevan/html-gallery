@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ page.title }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f8f9fb;
+    --surface: #ffffff;
+    --border: #e8eaed;
+    --text: #1a1a2e;
+    --muted: #8a8fa8;
+    --accent: #5b6af0;
+    --accent-light: #eef0ff;
+  }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(255,255,255,.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    height: 60px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .nav-brand { font-size: 1.1rem; font-weight: 600; color: var(--text); text-decoration: none; }
+  .nav-brand span { color: var(--accent); }
+  .nav-links { display: flex; gap: .5rem; align-items: center; }
+  .nav-links a {
+    font-size: .875rem; color: var(--muted); text-decoration: none;
+    padding: .4rem .85rem; border-radius: 8px;
+  }
+  .nav-links a:hover { color: var(--text); background: var(--bg); }
+  .btn-primary {
+    background: var(--accent); color: #fff !important;
+    padding: .4rem 1rem !important; border-radius: 8px; font-weight: 500;
+  }
+
+  .preview-container { max-width: 100%; margin: 0; padding: 0; }
+  .preview-frame {
+    width: 100%; min-height: 80vh;
+    border: none;
+    background: #fff;
+  }
+
+  .page-header {
+    max-width: 80%; margin: 0 auto; padding: 1.5rem 2rem;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem;
+  }
+  .page-header-left { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .page-title { font-size: 1.5rem; font-weight: 600; }
+  .page-desc { font-size: .9rem; color: var(--muted); }
+  .page-meta { font-size: .85rem; color: var(--muted); }
+  .page-header-right a { color: var(--muted); text-decoration: none; font-size: .9rem; }
+  .page-header-right a:hover { color: var(--accent); }
+
+  /* ── Actions ── */
+  .action-bar {
+    max-width: 80%; margin: 0 auto; padding: 0 2rem 1.5rem;
+    display: flex; align-items: center; gap: 1rem;
+  }
+  .like-btn {
+    display: inline-flex; align-items: center; gap: .4rem;
+    padding: .5rem 1rem; border-radius: 20px;
+    border: 1.5px solid var(--border);
+    background: var(--surface); color: var(--muted);
+    font-size: .875rem; cursor: pointer;
+    transition: all .15s;
+  }
+  .like-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .like-btn.liked { background: #fff0f0; border-color: #feb2b2; color: #e53e3e; }
+  .like-btn .icon { font-size: 1.1rem; }
+
+  /* ── Comments ── */
+  .comments-section {
+    max-width: 80%; margin: 0 auto; padding: 0 2rem 4rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    padding: 1.5rem;
+  }
+  .comments-header { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; }
+  .comment-form { display: flex; flex-direction: column; gap: .75rem; margin-bottom: 1.5rem; }
+  .comment-form-row { display: flex; gap: .75rem; }
+  .comment-form input {
+    flex: 1; padding: .6rem .85rem;
+    border: 1.5px solid var(--border);
+    border-radius: 8px; font-size: .9rem;
+  }
+  .comment-form input:focus { outline: none; border-color: var(--accent); }
+  .comment-form textarea {
+    width: 100%; padding: .75rem 1rem;
+    border: 1.5px solid var(--border);
+    border-radius: 10px; font-size: .9rem;
+    font-family: inherit; resize: vertical; min-height: 80px;
+  }
+  .comment-form textarea:focus { outline: none; border-color: var(--accent); }
+  .comment-submit {
+    padding: .5rem 1.2rem;
+    background: var(--accent); color: #fff;
+    border: none; border-radius: 8px;
+    font-size: .875rem; font-weight: 500; cursor: pointer;
+    align-self: flex-start;
+  }
+  .comment-submit:hover { opacity: .88; }
+  .comment-login-tip {
+    color: var(--muted); font-size: .85rem; padding: .75rem;
+    background: var(--bg); border-radius: 8px;
+    text-align: center; margin-bottom: 1rem;
+  }
+  .comment-login-tip a { color: var(--accent); text-decoration: none; }
+
+  .comment-list { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
+  .comment-item {
+    padding: 1rem; border-radius: 10px;
+    background: var(--bg); border: 1px solid var(--border);
+  }
+  .comment-item.pending { border-style: dashed; opacity: .7; }
+  .comment-item .meta {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: .5rem;
+  }
+  .comment-item .author { font-weight: 500; font-size: .875rem; }
+  .comment-item .time { font-size: .75rem; color: var(--muted); }
+  .comment-item .content { font-size: .9rem; line-height: 1.6; color: var(--text); }
+  .comment-actions { display: flex; gap: .5rem; margin-top: .75rem; align-items: center; flex-wrap: wrap; }
+  .comment-actions .action-btn {
+    font-size: .75rem; padding: .25rem .6rem;
+    border-radius: 4px; border: 1px solid var(--border);
+    background: var(--surface); cursor: pointer; color: var(--text);
+    transition: all .2s;
+  }
+  .comment-actions .action-btn:hover { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+  .comment-actions .action-tag {
+    font-size: .75rem; padding: .25rem .6rem;
+    border-radius: 4px; background: #fef3c7; color: #92400e;
+  }
+
+  .empty-comments { text-align: center; color: var(--muted); font-size: .9rem; padding: 2rem; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
+  <div class="nav-links">
+    {% if session.user_id == page.user_id %}
+      <a href="{{ url_for('edit_page', page_id=page.id) }}">编辑</a>
+      <a href="{{ url_for('dashboard') }}">我的作品</a>
+    {% else %}
+      <a href="{{ url_for('index') }}">首页</a>
+    {% endif %}
+    {% if session.user_id %}
+      <a href="{{ url_for('logout') }}">退出</a>
+    {% endif %}
+  </div>
+</nav>
+
+<div class="page-header">
+  <div class="page-header-left">
+    <button class="like-btn" id="likeBtn" onclick="toggleLike()">
+      <span class="icon">♥</span>
+      <span id="likeCount">0</span>
+    </button>
+    <h1 class="page-title">{{ page.title }}</h1>
+    {% if page.description %}
+      <span class="page-desc">{{ page.description }}</span>
+    {% endif %}
+    <span class="page-meta">by <strong>{{ page.username }}</strong></span>
+  </div>
+  <div class="page-header-right">
+    <a href="{{ url_for('index') }}">← 返回</a>
+  </div>
+</div>
+
+<div class="preview-container">
+  <iframe class="preview-frame" srcdoc="{{ page.html_source }}" sandbox="allow-scripts allow-same-origin"></iframe>
+</div>
+
+<div class="comments-section">
+  <div class="comments-header">评论</div>
+  
+  {% if session.user_id %}
+    <div class="comment-form">
+      <textarea id="commentContent" placeholder="写下你的评论..." required></textarea>
+      <button class="comment-submit" onclick="submitComment()">发表评论</button>
+    </div>
+  {% else %}
+    <div class="comment-login-tip">
+      登录后参与评论 <a href="{{ url_for('login', next=request.path) }}">登录</a> / <a href="{{ url_for('register', next=request.path) }}">注册</a>
+    </div>
+  {% endif %}
+
+  <div class="comment-list" id="commentList">
+    <div class="empty-comments">加载中...</div>
+  </div>
+</div>
+
+<script>
+  const pageId = {{ page.id }};
+  const currentUserId = {{ current_user_id or 'null' }};
+  const isLoggedIn = currentUserId !== null;
+  const isAuthor = {{ 'true' if page.user_id == session.get('user_id') else 'false' }};
+
+  // Load likes
+  fetch('/api/likes/' + pageId).then(r => r.json()).then(d => {
+    document.getElementById('likeCount').innerText = d.count;
+    if (d.liked) document.getElementById('likeBtn').classList.add('liked');
+  });
+
+  function toggleLike() {
+    if (!isLoggedIn) return alert('请先登录');
+    fetch('/api/like/' + pageId, { method: 'POST' })
+      .then(r => r.json()).then(d => {
+        document.getElementById('likeCount').innerText = d.count;
+        document.getElementById('likeBtn').classList.toggle('liked', d.liked);
+      });
+  }
+
+  // Load comments
+  loadComments();
+  function loadComments() {
+    fetch('/api/comments/' + pageId)
+    .then(r => r.json())
+    .then(d => {
+      const list = document.getElementById('commentList');
+      if (!d.comments.length) {
+        list.innerHTML = '<div class="empty-comments">暂无评论</div>';
+        return;
+      }
+      list.innerHTML = d.comments.map(c => `
+        <div class="comment-item ${c.status}">
+          <div class="meta">
+            <span class="author">${c.username || '匿名'}</span>
+            <span class="time">${new Date(c.created).toLocaleString('zh-CN')}</span>
+          </div>
+          <div class="content">${escapeHtml(c.content)}</div>
+          <div class="comment-actions">
+            ${d.is_author ? (c.status === 'pending' ? '<button class="action-btn" onclick="approveComment(' + c.id + ')">通过</button>' : '<button class="action-btn" onclick="rejectComment(' + c.id + ')">取消通过</button>') : ''}
+            ${c.user_id === currentUserId ? '<button class="action-btn" onclick="deleteComment(' + c.id + ')">删除</button>' : ''}
+            ${c.status === 'pending' ? '<span class="action-tag">待审核</span>' : ''}
+          </div>
+        </div>
+      `).join('');
+    });
+  }
+
+  function submitComment() {
+    const content = document.getElementById('commentContent').value.trim();
+    if (!content) return alert('请输入评论内容');
+    fetch('/api/comment/' + pageId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content })
+    }).then(r => r.json()).then(d => {
+      alert(d.message || d.error);
+      loadComments();  // 刷新评论列表（作者能看到待审核，其他人能看到的会更新）
+      document.getElementById('commentContent').value = '';
+    });
+  }
+
+  function approveComment(id) {
+    fetch('/api/comment/' + id + '/approve', { method: 'POST' }).then(r => r.json()).then(d => loadComments());
+  }
+
+  function rejectComment(id) {
+    if (!confirm('确认取消通过该评论？')) return;
+    fetch('/api/comment/' + id + '/reject', { method: 'POST' }).then(r => r.json()).then(d => loadComments());
+  }
+
+  function deleteComment(id) {
+    if (!confirm('确认删除该评论？')) return;
+    fetch('/api/comment/' + id, { method: 'DELETE' }).then(r => r.json()).then(d => {
+      alert(d.error || '删除成功');
+      loadComments();
+    });
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的作品 - HTML Gallery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f8f9fb;
+    --surface: #ffffff;
+    --border: #e8eaed;
+    --text: #1a1a2e;
+    --muted: #8a8fa8;
+    --accent: #5b6af0;
+    --accent-light: #eef0ff;
+    --danger: #e53e3e;
+    --radius: 12px;
+  }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(255,255,255,.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    height: 60px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .nav-brand {
+    font-size: 1.1rem; font-weight: 600; color: var(--text);
+    text-decoration: none; letter-spacing: -.3px; line-height: 1;
+  }
+  .nav-brand span { color: var(--accent); }
+  .nav-links { display: flex; gap: .5rem; align-items: center; }
+  .nav-links a {
+    font-size: .875rem; color: var(--muted); text-decoration: none;
+    padding: .4rem .85rem; border-radius: 8px;
+  }
+  .nav-links a:hover { color: var(--text); background: var(--bg); }
+  .btn-primary {
+    background: var(--accent); color: #fff !important;
+    padding: .4rem 1rem !important; border-radius: 8px;
+    font-weight: 500; line-height: 1.5;
+  }
+  .btn-primary:hover { background: #4a5ad4 !important; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 2.5rem 1.5rem; }
+  .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; }
+  .page-header h1 { font-size: 1.5rem; font-weight: 600; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.25rem;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(0,0,0,.04);
+    transition: transform .2s, box-shadow .2s;
+  }
+  .card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.08); }
+
+  .card-thumb {
+    width: 100%; aspect-ratio: 16/9;
+    background: linear-gradient(135deg, #f0f2ff 0%, #e8f4fd 100%);
+    overflow: hidden;
+  }
+  .card-thumb iframe {
+    width: 200%; height: 200%;
+    transform: scale(.5); transform-origin: top left;
+    pointer-events: none; border: none;
+  }
+
+  .card-body { padding: 1rem; }
+  .card-title {
+    font-size: .95rem; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    text-decoration: none; color: var(--text);
+  }
+  .card-title:hover { color: var(--accent); }
+  .card-meta {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: .75rem; font-size: .78rem; color: var(--muted);
+  }
+  .card-actions { display: flex; gap: .5rem; }
+  .card-actions a, .card-actions button {
+    font-size: .78rem; color: var(--accent);
+    text-decoration: none; padding: .25rem .5rem;
+    border-radius: 6px; background: var(--accent-light);
+    border: none; cursor: pointer;
+  }
+  .card-actions button.danger {
+    background: #fff5f5; color: var(--danger);
+  }
+
+  .empty { text-align: center; padding: 4rem 1rem; color: var(--muted); }
+  .empty-icon { font-size: 3rem; opacity: .4; margin-bottom: 1rem; }
+
+  .btn-add {
+    display: inline-flex; align-items: center; gap: .4rem;
+    background: var(--accent); color: #fff;
+    padding: .6rem 1.2rem; border-radius: 8px;
+    text-decoration: none; font-size: .9rem; font-weight: 500; line-height: 1.5;
+  }
+  .btn-add:hover { opacity: .88; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
+  <div class="nav-links">
+    <a href="{{ url_for('new_page') }}" class="btn-primary">+ 新建</a>
+    <a href="{{ url_for('index') }}">首页</a>
+    <a href="{{ url_for('settings') }}">设置</a>
+    <a href="{{ url_for('logout') }}">退出</a>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="page-header">
+    <h1>我的作品</h1>
+    <a href="{{ url_for('new_page') }}" class="btn-add">+ 新建页面</a>
+  </div>
+
+  {% if pages %}
+  <div class="grid">
+    {% for page in pages %}
+    <div class="card">
+      <div class="card-thumb">
+        <iframe srcdoc="{{ page.html_source | e }}" sandbox="allow-scripts" loading="lazy"></iframe>
+      </div>
+      <div class="card-body">
+        <a class="card-title" href="{{ url_for('preview', slug=page.slug) }}">{{ page.title }}</a>
+        <div class="card-meta">
+          <span>{{ '公开' if page.is_public else '私密' }}</span>
+          <div class="card-actions">
+            <a href="{{ url_for('edit_page', page_id=page.id) }}">编辑</a>
+            <a href="{{ url_for('preview', slug=page.slug) }}">预览</a>
+            <form method="post" action="{{ url_for('delete_page', page_id=page.id) }}" onsubmit="return confirm('确认删除？')">
+              <button type="submit" class="danger">删除</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">
+    <div class="empty-icon">📁</div>
+    <p>还没有作品，点击上方按钮创建第一个吧</p>
+  </div>
+  {% endif %}
+</div>
+
+</body>
+</html>

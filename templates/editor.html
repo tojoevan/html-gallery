@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ '编辑' if mode == 'edit' else '新建' }}页面 - HTML Gallery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f8f9fb;
+    --surface: #ffffff;
+    --border: #e8eaed;
+    --text: #1a1a2e;
+    --muted: #8a8fa8;
+    --accent: #5b6af0;
+    --accent-light: #eef0ff;
+  }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(255,255,255,.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    height: 60px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .nav-brand { font-size: 1.1rem; font-weight: 600; color: var(--text); text-decoration: none; letter-spacing: -.3px; line-height: 1; }
+  .nav-brand span { color: var(--accent); }
+  .nav-links { display: flex; gap: .5rem; align-items: center; }
+  .nav-links a {
+    font-size: .875rem; color: var(--muted); text-decoration: none;
+    padding: .4rem .85rem; border-radius: 8px;
+  }
+  .btn-primary { background: var(--accent); color: #fff !important; padding: .65rem 1.4rem !important; border-radius: 8px; font-weight: 500; }
+  .btn-primary:hover { background: #4a5ad4 !important; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
+  .editor-header { margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+  .editor-header h1 { font-size: 1.3rem; font-weight: 600; }
+  
+  .form-row { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: flex-end; }
+  .form-group { flex: 1; min-width: 200px; }
+  .form-group label { display: block; font-size: .85rem; font-weight: 500; margin-bottom: .4rem; }
+  .form-group input[type="text"] {
+    width: 100%; padding: .6rem .85rem;
+    border: 1.5px solid var(--border);
+    border-radius: 8px; font-size: .95rem;
+  }
+  .form-group input:focus { outline: none; border-color: var(--accent); }
+  .checkbox-group { display: flex; align-items: center; gap: .5rem; }
+  .checkbox-group input { width: 1rem; height: 1rem; }
+
+  .editor-main { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; height: calc(100vh - 220px); min-height: 500px; }
+  .editor-pane { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .pane-header {
+    padding: .75rem 1rem; font-size: .85rem; font-weight: 500;
+    border-bottom: 1px solid var(--border); background: #fafbfc;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .pane-header span { color: var(--muted); }
+  .editor-textarea {
+    flex: 1; padding: 1rem;
+    border: none; resize: none;
+    font-family: 'JetBrains Mono', monospace; font-size: .9rem;
+    line-height: 1.6;
+  }
+  .editor-textarea:focus { outline: none; }
+  .preview-frame {
+    flex: 1; border: none; width: 100%; height: 100%;
+    background: #fff;
+  }
+
+  .form-actions { margin-top: 1rem; display: flex; gap: .75rem; justify-content: flex-end; }
+  .btn {
+    padding: .65rem 1.4rem; border-radius: 8px; font-size: .9rem; font-weight: 500;
+    cursor: pointer; border: 1.5px solid var(--border); background: var(--surface); text-decoration: none;
+  }
+  .btn-primary { background: var(--accent); color: #fff; border: none; padding: .65rem 1.4rem; }
+  .btn-primary:hover { opacity: .88; }
+
+  @media (max-width: 768px) {
+    .editor-main { grid-template-columns: 1fr; height: auto; }
+    .preview-frame { min-height: 400px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
+  <div class="nav-links">
+    <a href="{{ url_for('dashboard') }}">我的作品</a>
+    <a href="{{ url_for('index') }}">首页</a>
+  </div>
+</nav>
+
+<div class="container">
+  <div class="editor-header">
+    <h1>{{ '编辑页面' if mode == 'edit' else '新建页面' }}</h1>
+  </div>
+
+  <form method="post">
+    <div class="form-row">
+      <div class="form-group" style="flex: 2;">
+        <label for="title">页面标题</label>
+        <input type="text" id="title" name="title" placeholder="输入标题" value="{{ page.title if page else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="description">简短描述</label>
+        <input type="text" id="description" name="description" placeholder="可选描述" value="{{ page.description if page else '' }}">
+      </div>
+      <div class="checkbox-group">
+        <input type="checkbox" id="is_public" name="is_public" {% if page and page.is_public or not page %}checked{% endif %}>
+        <label for="is_public">公开可见</label>
+        <a href="{{ url_for('dashboard') }}" class="btn" style="margin-left: auto;">取消</a>
+        <button type="submit" class="btn btn-primary">{{ '保存修改' if mode == 'edit' else '发布页面' }}</button>
+      </div>
+    </div>
+
+    <div class="editor-main">
+      <div class="editor-pane">
+        <div class="pane-header">
+          <span>HTML 源码</span>
+          <button type="button" class="btn" onclick="updatePreview()" style="padding: .3rem .7rem; font-size: .8rem;">刷新预览</button>
+        </div>
+        <textarea 
+          class="editor-textarea" 
+          id="html_source" 
+          name="html_source" 
+          placeholder="<!DOCTYPE html>&#10;<html>&#10;<head>&#10;  <title>Hello</title>&#10;</head>&#10;<body>&#10;  <h1>Hello World</h1>&#10;</body>&#10;</html>"
+        >{{ page.html_source if page else '' }}</textarea>
+      </div>
+      <div class="editor-pane">
+        <div class="pane-header">
+          <span>实时预览</span>
+        </div>
+        <iframe class="preview-frame" id="preview" sandbox="allow-scripts"></iframe>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+  const textarea = document.getElementById('html_source');
+  const iframe = document.getElementById('preview');
+
+  function updatePreview() {
+    const html = textarea.value || '';
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      if (doc) {
+        doc.open();
+        doc.write(html);
+        doc.close();
+      }
+    } catch(e) {
+      // 跨域限制时使用 srcdoc
+      iframe.srcdoc = html;
+    }
+  }
+
+  // 页面加载完成后初始化预览
+  window.addEventListener('load', function() {
+    setTimeout(updatePreview, 100);
+  });
+
+  // 实时预览
+  let previewTimeout;
+  textarea.addEventListener('input', () => {
+    clearTimeout(previewTimeout);
+    previewTimeout = setTimeout(updatePreview, 500);
+  });
+</script>
+
+</body>
+</html>
