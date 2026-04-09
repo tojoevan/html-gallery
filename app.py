@@ -17,14 +17,21 @@ def get_db():
     return conn
 
 def init_db():
+    """初始化数据库，创建所有必要的表"""
     with get_db() as db:
-        db.executescript('''
+        # users 表 - 支持 email 字段
+        db.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id       INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT    UNIQUE NOT NULL,
                 password TEXT    NOT NULL,
-                created  TEXT    NOT NULL
-            );
+                created  TEXT    NOT NULL,
+                email    TEXT
+            )
+        ''')
+        
+        # pages 表
+        db.execute('''
             CREATE TABLE IF NOT EXISTS pages (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id     INTEGER NOT NULL,
@@ -36,7 +43,11 @@ def init_db():
                 created     TEXT    NOT NULL,
                 updated     TEXT    NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id)
-            );
+            )
+        ''')
+        
+        # likes 表
+        db.execute('''
             CREATE TABLE IF NOT EXISTS likes (
                 id        INTEGER PRIMARY KEY AUTOINCREMENT,
                 page_id   INTEGER NOT NULL,
@@ -45,20 +56,26 @@ def init_db():
                 UNIQUE(page_id, user_id),
                 FOREIGN KEY(page_id) REFERENCES pages(id),
                 FOREIGN KEY(user_id) REFERENCES users(id)
-            );
+            )
+        ''')
+        
+        # comments 表
+        db.execute('''
             CREATE TABLE IF NOT EXISTS comments (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 page_id     INTEGER NOT NULL,
-                user_id     INTEGER,
-                name        TEXT    NOT NULL,
-                email       TEXT    NOT NULL,
+                user_id     INTEGER NOT NULL,
                 content     TEXT    NOT NULL,
                 status      TEXT    DEFAULT 'pending',
                 created     TEXT    NOT NULL,
+                name        TEXT    NOT NULL DEFAULT '',
+                email       TEXT    NOT NULL DEFAULT '',
                 FOREIGN KEY(page_id) REFERENCES pages(id),
                 FOREIGN KEY(user_id) REFERENCES users(id)
-            );
+            )
         ''')
+        
+        db.commit()
 
 init_db()
 
