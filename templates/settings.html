@@ -3,6 +3,7 @@
 <head>
   <meta charset=utf-8>
   <title>用户设置 - HTMLGallery</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
   <style>
@@ -17,10 +18,29 @@
     }
     .nav-brand span { color: var(--accent); }
     .nav-links { display: flex; gap: .5rem; align-items: center; }
+    .nav-toggle-input, .nav-toggle-btn { display: none; }
     .nav-links a { font-size: .875rem; color: var(--muted); text-decoration: none; padding: .4rem .85rem; border-radius: 8px; transition: all .15s; }
     .nav-links a:hover { color: var(--text); background: var(--bg); }
     .btn-primary { background: var(--accent); color: #fff !important; padding: .4rem 1rem !important; border-radius: 8px; font-weight: 500; line-height: 1.5; }
     .btn-primary:hover { background: #4a5ad4 !important; }
+
+    @media (max-width: 640px) {
+      .nav-toggle-input { display: none; }
+      .nav-toggle-btn {
+        display: flex; align-items: center; justify-content: center;
+        width: 38px; height: 38px; font-size: 1.25rem; color: var(--text); cursor: pointer;
+      }
+      nav { padding: 0 1rem; position: relative; }
+      .nav-links {
+        display: none; position: absolute; top: 60px; right: 1rem;
+        flex-direction: column; align-items: stretch; gap: .15rem;
+        min-width: 150px; padding: .5rem;
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
+      }
+      .nav-toggle-input:checked ~ .nav-links { display: flex; }
+      .nav-links a { padding: .55rem .85rem; font-size: .9rem; }
+    }
 
     .container { max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
     h1 { font-size: 1.5rem; margin-bottom: 1.5rem; }
@@ -45,6 +65,8 @@
 
 <nav>
   <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
+  <input type="checkbox" id="nav-toggle" class="nav-toggle-input" aria-label="展开菜单">
+  <label for="nav-toggle" class="nav-toggle-btn" aria-label="菜单">☰</label>
   <div class="nav-links">
     <a href="{{ url_for('new_page') }}" class="btn-primary">+ 新建</a>
     <a href="{{ url_for('dashboard') }}">我的作品</a>
@@ -63,6 +85,22 @@
   
   {% if error %}<div class="error">{{ error }}</div>{% endif %}
   
+  <div class="card">
+    <h2>公开标识</h2>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem;">
+      分享链接形如 <code style="color:var(--accent);">gallery.njit.top/{{ user.handle }}/你的作品后缀</code>。<br>
+      它与登录用户名无关，可随时修改；留随机值则不暴露任何个人信息。
+    </p>
+    <form method="post">
+      <input type="hidden" name="action" value="update_handle">
+      <div class="form-group">
+        <label>公开标识（3-30 位小写字母/数字/下划线/连字符）</label>
+        <input type="text" name="handle" value="{{ user.handle or '' }}" pattern="[a-z0-9][a-z0-9_-]{2,29}" required>
+      </div>
+      <button type="submit" class="btn btn-primary">保存公开标识</button>
+    </form>
+  </div>
+
   <div class="card">
     <h2>个人信息</h2>
     <form method="post">

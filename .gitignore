@@ -1,3 +1,7 @@
+# Local deployment config (may contain server IP / SSH port)
+.deploy.env
+设计文档-复用价值分析.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

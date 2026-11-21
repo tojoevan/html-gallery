@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ '编辑' if mode == 'edit' else '新建' }}页面 - HTML Gallery</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
 <style>
@@ -89,6 +90,15 @@
   @media (max-width: 768px) {
     .editor-main { grid-template-columns: 1fr; height: auto; }
     .preview-frame { min-height: 400px; }
+    .form-row { align-items: stretch; }
+    .form-group { min-width: 100%; }
+    .checkbox-group { width: 100%; flex-wrap: wrap; }
+    .checkbox-group .btn { margin-left: 0 !important; }
+  }
+  @media (max-width: 640px) {
+    nav { padding: 0 1rem; }
+    .nav-links a { padding: .4rem .6rem; font-size: .82rem; }
+    .container { padding: 1rem; }
   }
 </style>
 </head>
@@ -129,7 +139,12 @@
       <div class="editor-pane">
         <div class="pane-header">
           <span>HTML 源码</span>
-          <button type="button" class="btn" onclick="updatePreview()" style="padding: .3rem .7rem; font-size: .8rem;">刷新预览</button>
+          <span style="display: flex; gap: .5rem; align-items: center;">
+            <label class="btn" style="padding: .3rem .7rem; font-size: .8rem;">上传文件
+              <input type="file" id="html_file" accept=".html,.htm,text/html" style="display: none;">
+            </label>
+            <button type="button" class="btn" onclick="updatePreview()" style="padding: .3rem .7rem; font-size: .8rem;">刷新预览</button>
+          </span>
         </div>
         <textarea 
           class="editor-textarea" 
@@ -177,6 +192,30 @@
   textarea.addEventListener('input', () => {
     clearTimeout(previewTimeout);
     previewTimeout = setTimeout(updatePreview, 500);
+  });
+
+  // 上传 HTML 文件：读取文本填入源码框（编辑模式直接覆盖）
+  const fileInput = document.getElementById('html_file');
+  const titleInput = document.getElementById('title');
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    if (file.size > 3 * 1024 * 1024) {
+      alert('文件超过 3MB，请选择更小的 HTML 文件');
+      fileInput.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      textarea.value = e.target.result;
+      if (!titleInput.value.trim()) {
+        titleInput.value = file.name.replace(/\.html?$/i, '');
+      }
+      updatePreview();
+    };
+    reader.readAsText(file, 'UTF-8');
+    // 允许重复上传同一文件
+    fileInput.value = '';
   });
 </script>
 

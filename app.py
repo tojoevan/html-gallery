@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, abort
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, abort, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3, os, re
 from datetime import datetime
@@ -77,6 +77,49 @@ def init_db():
         
         db.commit()
 
+    migrate_db()
+
+def migrate_db():
+    """幂等迁移：users 加公开标识 handle；pages 的 slug 改为用户内唯一。
+    新库和老库都走这里，重复执行安全。"""
+    import secrets
+    with get_db() as db:
+        cols = {r['name'] for r in db.execute('PRAGMA table_info(users)')}
+        if 'handle' not in cols:
+            db.execute('ALTER TABLE users ADD COLUMN handle TEXT')
+        # 给缺失/空的 handle 生成随机公开标识（不含登录用户名）
+        for row in db.execute("SELECT id, handle FROM users WHERE handle IS NULL OR handle=''").fetchall():
+            handle = 'user-' + secrets.token_hex(3)
+            while db.execute('SELECT 1 FROM users WHERE handle=?', (handle,)).fetchone():
+                handle = 'user-' + secrets.token_hex(3)
+            db.execute('UPDATE users SET handle=? WHERE id=?', (handle, row['id']))
+        db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_handle ON users(handle)')
+
+        # pages：仅当 slug 仍是全局唯一时重建（老结构）
+        page_sql = db.execute("SELECT sql FROM sqlite_master WHERE name='pages'").fetchone()[0]
+        if re.search(r'\bslug\s+TEXT\s+UNIQUE', page_sql):
+            db.execute("ALTER TABLE pages RENAME TO pages_old")
+            db.execute('''
+                CREATE TABLE pages (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id     INTEGER NOT NULL,
+                    title       TEXT    NOT NULL,
+                    slug        TEXT    NOT NULL,
+                    html_source TEXT    NOT NULL,
+                    description TEXT    DEFAULT '',
+                    is_public   INTEGER DEFAULT 1,
+                    created     TEXT    NOT NULL,
+                    updated     TEXT    NOT NULL,
+                    UNIQUE(user_id, slug),
+                    FOREIGN KEY(user_id) REFERENCES users(id)
+                )
+            ''')
+            db.execute('''
+                INSERT INTO pages (id,user_id,title,slug,html_source,description,is_public,created,updated)
+                SELECT id,user_id,title,slug,html_source,description,is_public,created,updated FROM pages_old
+            ''')
+            db.execute('DROP TABLE pages_old')
+
 init_db()
 
 # ── Auth decorator ───────────────────────────────────────────────────────────
@@ -95,14 +138,15 @@ def slugify(text):
     text = re.sub(r'[\s_-]+', '-', text)
     return text[:60]
 
-def unique_slug(base, db, exclude_id=None):
+def unique_slug(base, db, user_id, exclude_id=None):
+    """slug 在用户内唯一：不同用户可各用 topology。"""
     slug = slugify(base) or 'page'
     candidate = slug
     i = 1
     while True:
         row = db.execute(
-            'SELECT id FROM pages WHERE slug=? AND id!=?',
-            (candidate, exclude_id or -1)
+            'SELECT id FROM pages WHERE user_id=? AND slug=? AND id!=?',
+            (user_id, candidate, exclude_id or -1)
         ).fetchone()
         if not row:
             return candidate
@@ -131,6 +175,7 @@ def register():
         email = request.form.get('email', '').strip()
         password = request.form['password']
         confirm_password = request.form.get('confirm_password', '')
+        handle = request.form.get('handle', '').strip().lower()
         error = None
         if not username or len(username) < 2:
             error = '用户名至少 2 个字符'
@@ -140,14 +185,23 @@ def register():
             error = '密码至少 6 位'
         elif password != confirm_password:
             error = '两次密码输入不一致'
+        elif handle and (not re.fullmatch(r'[a-z0-9][a-z0-9_-]{2,29}', handle)):
+            error = '公开标识限 3-30 位小写字母、数字、下划线或连字符'
         else:
             db = get_db()
             if db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone():
                 error = '用户名已存在'
+            elif handle and db.execute('SELECT id FROM users WHERE handle=?', (handle,)).fetchone():
+                error = '公开标识已被占用'
             else:
+                if not handle:
+                    import secrets
+                    handle = 'user-' + secrets.token_hex(3)
+                    while db.execute('SELECT 1 FROM users WHERE handle=?', (handle,)).fetchone():
+                        handle = 'user-' + secrets.token_hex(3)
                 db.execute(
-                    'INSERT INTO users (username, email, password, created) VALUES (?,?,?,?)',
-                    (username, email, generate_password_hash(password), datetime.now().isoformat())
+                    'INSERT INTO users (username, email, password, created, handle) VALUES (?,?,?,?,?)',
+                    (username, email, generate_password_hash(password), datetime.now().isoformat(), handle)
                 )
                 db.commit()
                 user = db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone()
@@ -181,11 +235,25 @@ def logout():
 @login_required
 def settings():
     db = get_db()
-    user = db.execute('SELECT id, username, email FROM users WHERE id=?', (session['user_id'],)).fetchone()
-    
+    user = db.execute('SELECT id, username, email, handle, password FROM users WHERE id=?', (session['user_id'],)).fetchone()
+
     if request.method == 'POST':
         action = request.form.get('action')
-        
+
+        if action == 'update_handle':
+            handle = request.form.get('handle', '').strip().lower()
+            error = None
+            if not re.fullmatch(r'[a-z0-9][a-z0-9_-]{2,29}', handle):
+                error = '公开标识限 3-30 位小写字母、数字、下划线或连字符'
+            elif db.execute('SELECT id FROM users WHERE handle=? AND id!=?', (handle, session['user_id'])).fetchone():
+                error = '公开标识已被占用'
+            if error:
+                return render_template('settings.html', user=user, error=error)
+            db.execute('UPDATE users SET handle=? WHERE id=?', (handle, session['user_id']))
+            db.commit()
+            flash('公开标识已更新')
+            return redirect(url_for('settings'))
+
         if action == 'update_email':
             password = request.form.get('password')
             email = request.form.get('email', '').strip()
@@ -254,7 +322,7 @@ def new_page():
         is_public = 1 if request.form.get('is_public') else 0
         now = datetime.now().isoformat()
         db = get_db()
-        slug = unique_slug(title, db)
+        slug = unique_slug(title, db, session['user_id'])
         db.execute(
             'INSERT INTO pages (user_id,title,slug,html_source,description,is_public,created,updated) VALUES (?,?,?,?,?,?,?,?)',
             (session['user_id'], title, slug, html_source, description, is_public, now, now)
@@ -297,19 +365,58 @@ def delete_page(page_id):
 
 # ── Preview ───────────────────────────────────────────────────────────────────
 
-@app.route('/p/<slug>')
-def preview(slug):
+# 注入作品 iframe 的高度上报脚本：无 allow-same-origin，靠 postMessage 上报，
+# 父页面校验 event.source === iframe.contentWindow，安全边界不变。
+HEIGHT_REPORT_JS = '''<script>
+(function(){
+  function send(){
+    try {
+      parent.postMessage({__galleryHeight: Math.max(
+        document.body.scrollHeight, document.documentElement.scrollHeight
+      )}, '*');
+    } catch(e){}
+  }
+  window.addEventListener('load', send);
+  setTimeout(send, 300);
+  if (document.readyState === 'complete') send();
+  if (window.ResizeObserver) new ResizeObserver(send).observe(document.body);
+})();
+</script>'''
+
+def _page_or_403(slug, handle=None):
     db = get_db()
-    page = db.execute(
-        'SELECT p.*, u.username FROM pages p JOIN users u ON p.user_id=u.id WHERE p.slug=?',
-        (slug,)
-    ).fetchone()
+    if handle is None:
+        page = db.execute(
+            'SELECT p.*, u.username, u.handle FROM pages p JOIN users u ON p.user_id=u.id WHERE p.slug=? ORDER BY p.id LIMIT 1',
+            (slug,)
+        ).fetchone()
+    else:
+        page = db.execute(
+            'SELECT p.*, u.username, u.handle FROM pages p JOIN users u ON p.user_id=u.id WHERE u.handle=? AND p.slug=?',
+            (handle, slug)
+        ).fetchone()
     if not page:
         abort(404)
     if not page['is_public']:
         if 'user_id' not in session or session['user_id'] != page['user_id']:
             abort(403)
-    return render_template('preview.html', page=page, current_user_id=session.get('user_id'))
+    return page
+
+@app.route('/p/<slug>')
+def preview(slug):
+    page = _page_or_403(slug)
+    return render_template(
+        'preview.html', page=page,
+        html_source=page['html_source'] + HEIGHT_REPORT_JS,
+        current_user_id=session.get('user_id')
+    )
+
+@app.route('/view/<slug>')
+def view(slug):
+    """纯净分享视图：只有作品，无顶栏无评论，iframe 独立视口保留作品自身 sticky。"""
+    page = _page_or_403(slug)
+    return render_template('view.html', page=page, html_source=page['html_source'],
+                           current_user_id=session.get('user_id'))
 
 # ── API: live preview ─────────────────────────────────────────────────────────
 
@@ -449,5 +556,14 @@ def delete_comment(comment_id):
     db.commit()
     return jsonify({'success': True})
 
+# ── Public share: /<handle>/<slug> ──────────────────────────────────────────
+# 放在所有静态路由之后：Flask 静态路由优先，两段动态路径不会吃掉 /login 等。
+@app.route('/<handle>/<slug>')
+def share(handle, slug):
+    """公开分享链接：按公开标识 + 作品后缀定位，不含登录用户名。"""
+    page = _page_or_403(slug, handle=handle)
+    return render_template('view.html', page=page, html_source=page['html_source'],
+                           current_user_id=session.get('user_id'))
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5050)
+    app.run(debug=os.environ.get('FLASK_DEBUG') == '1', port=5050)

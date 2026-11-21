@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>我的作品 - HTML Gallery</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -40,6 +41,7 @@
   }
   .nav-brand span { color: var(--accent); }
   .nav-links { display: flex; gap: .5rem; align-items: center; }
+  .nav-toggle-input, .nav-toggle-btn { display: none; }
   .nav-links a {
     font-size: .875rem; color: var(--muted); text-decoration: none;
     padding: .4rem .85rem; border-radius: 8px;
@@ -115,12 +117,35 @@
     text-decoration: none; font-size: .9rem; font-weight: 500; line-height: 1.5;
   }
   .btn-add:hover { opacity: .88; }
+
+  @media (max-width: 640px) {
+    .nav-toggle-input { display: none; }
+    .nav-toggle-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 38px; height: 38px; font-size: 1.25rem; color: var(--text); cursor: pointer;
+    }
+    nav { padding: 0 1rem; position: relative; }
+    .nav-links {
+      display: none; position: absolute; top: 60px; right: 1rem;
+      flex-direction: column; align-items: stretch; gap: .15rem;
+      min-width: 150px; padding: .5rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
+    }
+    .nav-toggle-input:checked ~ .nav-links { display: flex; }
+    .nav-links a { padding: .55rem .85rem; font-size: .9rem; }
+    .container { padding: 1.5rem 1rem; }
+    .page-header { margin-bottom: 1.5rem; }
+    .grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
 
 <nav>
   <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
+  <input type="checkbox" id="nav-toggle" class="nav-toggle-input" aria-label="展开菜单">
+  <label for="nav-toggle" class="nav-toggle-btn" aria-label="菜单">☰</label>
   <div class="nav-links">
     <a href="{{ url_for('new_page') }}" class="btn-primary">+ 新建</a>
     <a href="{{ url_for('index') }}">首页</a>

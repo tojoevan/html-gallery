@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ page.title }}</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { background: #fff; }
+  /* 独立视口：作品在 iframe 内滚动，自身 sticky 目录/表头照常工作 */
+  .share-frame {
+    display: block; width: 100%; height: 100vh;
+    border: none; background: #fff;
+  }
+  /* 作者回管理页的角标：仅登录后显示，访客完全无感 */
+  .share-back {
+    position: fixed; right: 16px; bottom: 16px; z-index: 9999;
+    display: inline-flex; align-items: center; gap: .35rem;
+    padding: .45rem .8rem; border-radius: 20px;
+    background: rgba(26,26,46,.78); color: #fff;
+    font: 500 .8rem/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    text-decoration: none; backdrop-filter: blur(6px);
+    opacity: .55; transition: opacity .15s;
+  }
+  .share-back:hover { opacity: 1; }
+</style>
+</head>
+<body>
+  <iframe class="share-frame" srcdoc="{{ html_source | e }}" sandbox="allow-scripts"></iframe>
+  {% if current_user_id == page.user_id %}
+    <a class="share-back" href="{{ url_for('preview', slug=page.slug) }}" title="返回作品管理页">← 管理</a>
+  {% endif %}
+</body>
+</html>

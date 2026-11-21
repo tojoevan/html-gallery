@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>HTML Gallery</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -46,6 +47,7 @@
   }
   .nav-brand span { color: var(--accent); }
   .nav-links { display: flex; gap: .5rem; align-items: center; }
+  .nav-toggle-input, .nav-toggle-btn { display: none; }
   .nav-links a {
     font-size: .875rem; color: var(--muted); text-decoration: none;
     padding: .4rem .85rem; border-radius: 8px; transition: all .15s;
@@ -151,6 +153,28 @@
   }
   .card-link:hover { opacity: .75; }
 
+  @media (max-width: 640px) {
+    .nav-toggle-input { display: none; }
+    .nav-toggle-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 38px; height: 38px; font-size: 1.25rem; color: var(--text); cursor: pointer;
+    }
+    nav { padding: 0 1rem; position: relative; }
+    .nav-links {
+      display: none; position: absolute; top: 60px; right: 1rem;
+      flex-direction: column; align-items: stretch; gap: .15rem;
+      min-width: 150px; padding: .5rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
+    }
+    .nav-toggle-input:checked ~ .nav-links { display: flex; }
+    .nav-links a { padding: .55rem .85rem; font-size: .9rem; }
+    .hero { padding: 3rem 1rem 2.5rem; }
+    .hero p { font-size: .95rem; }
+    .grid { grid-template-columns: 1fr; padding: 0 1rem 3rem; gap: 1rem; }
+    .section-header { padding: 0 1rem 1.25rem; }
+  }
+
   /* ── Empty ── */
   .empty {
     grid-column: 1/-1; text-align: center;
@@ -171,6 +195,8 @@
 
 <nav>
   <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
+  <input type="checkbox" id="nav-toggle" class="nav-toggle-input" aria-label="展开菜单">
+  <label for="nav-toggle" class="nav-toggle-btn" aria-label="菜单">☰</label>
   <div class="nav-links">
     {% if session.user_id %}
       <a href="{{ url_for('new_page') }}" class="btn-primary">+ 新建</a>

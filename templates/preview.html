@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ page.title }}</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -32,17 +33,36 @@
     height: 60px;
     display: flex; align-items: center; justify-content: space-between;
   }
-  .nav-brand { font-size: 1.1rem; font-weight: 600; color: var(--text); text-decoration: none; }
+  .nav-brand { font-size: 1.1rem; font-weight: 600; color: var(--text); text-decoration: none; white-space: nowrap; }
   .nav-brand span { color: var(--accent); }
+  .nav-left { display: flex; align-items: center; min-width: 0; gap: .75rem; flex: 1; }
+  .nav-sep { width: 1px; height: 20px; background: var(--border); flex: none; }
+  .nav-title { font-size: .95rem; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nav-author { font-size: .8rem; color: var(--muted); white-space: nowrap; }
+  .nav-private {
+    font-size: .7rem; color: #92400e; background: #fef3c7;
+    padding: .15rem .45rem; border-radius: 4px; white-space: nowrap; flex: none;
+  }
   .nav-links { display: flex; gap: .5rem; align-items: center; }
   .nav-links a {
     font-size: .875rem; color: var(--muted); text-decoration: none;
     padding: .4rem .85rem; border-radius: 8px;
   }
   .nav-links a:hover { color: var(--text); background: var(--bg); }
-  .btn-primary {
-    background: var(--accent); color: #fff !important;
-    padding: .4rem 1rem !important; border-radius: 8px; font-weight: 500;
+  .like-btn {
+    display: inline-flex; align-items: center; gap: .3rem;
+    padding: .3rem .7rem; border-radius: 20px;
+    border: 1.5px solid var(--border);
+    background: var(--surface); color: var(--muted);
+    font-size: .8rem; cursor: pointer;
+    transition: all .15s;
+  }
+  .like-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .like-btn.liked { background: #fff0f0; border-color: #feb2b2; color: #e53e3e; }
+  .like-btn .icon { font-size: 1rem; }
+  @media (max-width: 640px) {
+    .nav-author, .nav-sep { display: none; }
+    nav { padding: 0 1rem; }
   }
 
   .preview-container { max-width: 100%; margin: 0; padding: 0; }
@@ -52,113 +72,94 @@
     background: #fff;
   }
 
-  .page-header {
-    max-width: 80%; margin: 0 auto; padding: 1.5rem 2rem;
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 1rem;
-  }
-  .page-header-left { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-  .page-title { font-size: 1.5rem; font-weight: 600; }
-  .page-desc { font-size: .9rem; color: var(--muted); }
-  .page-meta { font-size: .85rem; color: var(--muted); }
-  .page-header-right a { color: var(--muted); text-decoration: none; font-size: .9rem; }
-  .page-header-right a:hover { color: var(--accent); }
-
-  /* ── Actions ── */
-  .action-bar {
-    max-width: 80%; margin: 0 auto; padding: 0 2rem 1.5rem;
-    display: flex; align-items: center; gap: 1rem;
-  }
-  .like-btn {
-    display: inline-flex; align-items: center; gap: .4rem;
-    padding: .5rem 1rem; border-radius: 20px;
-    border: 1.5px solid var(--border);
-    background: var(--surface); color: var(--muted);
-    font-size: .875rem; cursor: pointer;
-    transition: all .15s;
-  }
-  .like-btn:hover { border-color: var(--accent); color: var(--accent); }
-  .like-btn.liked { background: #fff0f0; border-color: #feb2b2; color: #e53e3e; }
-  .like-btn .icon { font-size: 1.1rem; }
-
   /* ── Comments ── */
   .comments-section {
-    max-width: 80%; margin: 0 auto; padding: 0 2rem 4rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 0;
-    padding: 1.5rem;
+    max-width: 80%; margin: 1rem auto 4rem; padding: 1.25rem 1.5rem 2rem;
+    border-top: 1px solid var(--border);
   }
-  .comments-header { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; }
-  .comment-form { display: flex; flex-direction: column; gap: .75rem; margin-bottom: 1.5rem; }
-  .comment-form-row { display: flex; gap: .75rem; }
-  .comment-form input {
-    flex: 1; padding: .6rem .85rem;
-    border: 1.5px solid var(--border);
-    border-radius: 8px; font-size: .9rem;
+  .comments-head {
+    display: flex; align-items: baseline; gap: .5rem;
+    font-size: .95rem; font-weight: 600; margin-bottom: 1rem;
   }
-  .comment-form input:focus { outline: none; border-color: var(--accent); }
+  .comments-count {
+    font-size: .75rem; font-weight: 400; color: var(--muted);
+    background: var(--bg); padding: .1rem .5rem; border-radius: 10px;
+  }
+  .comment-form { display: flex; gap: .6rem; margin-bottom: 1.25rem; align-items: flex-end; }
   .comment-form textarea {
-    width: 100%; padding: .75rem 1rem;
-    border: 1.5px solid var(--border);
-    border-radius: 10px; font-size: .9rem;
-    font-family: inherit; resize: vertical; min-height: 80px;
+    flex: 1; min-width: 0; padding: .65rem .9rem;
+    border: 1.5px solid var(--border); border-radius: 8px;
+    font-size: .9rem; font-family: inherit; resize: vertical; min-height: 44px;
   }
   .comment-form textarea:focus { outline: none; border-color: var(--accent); }
   .comment-submit {
-    padding: .5rem 1.2rem;
+    padding: .65rem 1.1rem; flex: none;
     background: var(--accent); color: #fff;
     border: none; border-radius: 8px;
-    font-size: .875rem; font-weight: 500; cursor: pointer;
-    align-self: flex-start;
+    font-size: .85rem; font-weight: 500; cursor: pointer;
   }
   .comment-submit:hover { opacity: .88; }
   .comment-login-tip {
-    color: var(--muted); font-size: .85rem; padding: .75rem;
+    color: var(--muted); font-size: .85rem; padding: .7rem;
     background: var(--bg); border-radius: 8px;
     text-align: center; margin-bottom: 1rem;
   }
   .comment-login-tip a { color: var(--accent); text-decoration: none; }
 
-  .comment-list { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
+  .comment-list { display: flex; flex-direction: column; gap: .75rem; margin-top: .75rem; }
   .comment-item {
-    padding: 1rem; border-radius: 10px;
+    padding: .8rem 1rem; border-radius: 8px;
     background: var(--bg); border: 1px solid var(--border);
   }
-  .comment-item.pending { border-style: dashed; opacity: .7; }
+  .comment-item.pending { border-style: dashed; opacity: .75; }
   .comment-item .meta {
     display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: .5rem;
+    margin-bottom: .35rem;
   }
-  .comment-item .author { font-weight: 500; font-size: .875rem; }
-  .comment-item .time { font-size: .75rem; color: var(--muted); }
-  .comment-item .content { font-size: .9rem; line-height: 1.6; color: var(--text); }
-  .comment-actions { display: flex; gap: .5rem; margin-top: .75rem; align-items: center; flex-wrap: wrap; }
+  .comment-item .author { font-weight: 500; font-size: .85rem; }
+  .comment-item .time { font-size: .72rem; color: var(--muted); }
+  .comment-item .content { font-size: .88rem; line-height: 1.6; color: var(--text); }
+  .comment-actions { display: flex; gap: .5rem; margin-top: .5rem; align-items: center; flex-wrap: wrap; }
   .comment-actions .action-btn {
-    font-size: .75rem; padding: .25rem .6rem;
+    font-size: .72rem; padding: .22rem .55rem;
     border-radius: 4px; border: 1px solid var(--border);
     background: var(--surface); cursor: pointer; color: var(--text);
     transition: all .2s;
   }
   .comment-actions .action-btn:hover { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
   .comment-actions .action-tag {
-    font-size: .75rem; padding: .25rem .6rem;
+    font-size: .72rem; padding: .22rem .55rem;
     border-radius: 4px; background: #fef3c7; color: #92400e;
   }
+  @media (max-width: 640px) {
+    .comments-section { max-width: 100%; margin-left: 1rem; margin-right: 1rem; }
+    .comment-form { flex-direction: column; align-items: stretch; }
+  }
 
-  .empty-comments { text-align: center; color: var(--muted); font-size: .9rem; padding: 2rem; }
+  .empty-comments { text-align: center; color: var(--muted); font-size: .9rem; padding: 1.5rem; }
 </style>
 </head>
 <body>
 
 <nav>
-  <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
+  <div class="nav-left">
+    <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
+    <span class="nav-sep"></span>
+    <span class="nav-title" title="{{ page.description or page.title }}">{{ page.title }}</span>
+    {% if not page.is_public %}<span class="nav-private">私密</span>{% endif %}
+    <span class="nav-author">by {{ page.username }}</span>
+  </div>
   <div class="nav-links">
+    <button class="like-btn" id="likeBtn" onclick="toggleLike()" title="点赞">
+      <span class="icon">♥</span>
+      <span id="likeCount">0</span>
+    </button>
     {% if session.user_id == page.user_id %}
+      <a href="{{ url_for('share', handle=page.handle, slug=page.slug) }}">纯净分享 ↗</a>
       <a href="{{ url_for('edit_page', page_id=page.id) }}">编辑</a>
       <a href="{{ url_for('dashboard') }}">我的作品</a>
     {% else %}
-      <a href="{{ url_for('index') }}">首页</a>
+      <a href="{{ url_for('index') }}">返回</a>
     {% endif %}
     {% if session.user_id %}
       <a href="{{ url_for('logout') }}">退出</a>
@@ -166,30 +167,13 @@
   </div>
 </nav>
 
-<div class="page-header">
-  <div class="page-header-left">
-    <button class="like-btn" id="likeBtn" onclick="toggleLike()">
-      <span class="icon">♥</span>
-      <span id="likeCount">0</span>
-    </button>
-    <h1 class="page-title">{{ page.title }}</h1>
-    {% if page.description %}
-      <span class="page-desc">{{ page.description }}</span>
-    {% endif %}
-    <span class="page-meta">by <strong>{{ page.username }}</strong></span>
-  </div>
-  <div class="page-header-right">
-    <a href="{{ url_for('index') }}">← 返回</a>
-  </div>
-</div>
-
 <div class="preview-container">
-  <iframe class="preview-frame" srcdoc="{{ page.html_source }}" sandbox="allow-scripts allow-same-origin"></iframe>
+  <iframe class="preview-frame" id="previewFrame" srcdoc="{{ html_source | e }}" sandbox="allow-scripts"></iframe>
 </div>
 
 <div class="comments-section">
-  <div class="comments-header">评论</div>
-  
+  <div class="comments-head">评论 <span class="comments-count" id="commentsCount">0</span></div>
+
   {% if session.user_id %}
     <div class="comment-form">
       <textarea id="commentContent" placeholder="写下你的评论..." required></textarea>
@@ -211,6 +195,15 @@
   const currentUserId = {{ current_user_id or 'null' }};
   const isLoggedIn = currentUserId !== null;
   const isAuthor = {{ 'true' if page.user_id == session.get('user_id') else 'false' }};
+
+  // iframe 自适应高度：只接受来自本页 iframe 的上报，避免双滚动条
+  const previewFrame = document.getElementById('previewFrame');
+  window.addEventListener('message', function(e) {
+    if (e.source !== previewFrame.contentWindow) return;
+    if (!e.data || typeof e.data.__galleryHeight !== 'number') return;
+    const h = Math.max(e.data.__galleryHeight, 200);
+    previewFrame.style.height = h + 'px';
+  });
 
   // Load likes
   fetch('/api/likes/' + pageId).then(r => r.json()).then(d => {
@@ -234,6 +227,7 @@
     .then(r => r.json())
     .then(d => {
       const list = document.getElementById('commentList');
+      document.getElementById('commentsCount').innerText = d.comments.length;
       if (!d.comments.length) {
         list.innerHTML = '<div class="empty-comments">暂无评论</div>';
         return;
