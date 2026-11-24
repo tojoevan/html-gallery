@@ -82,6 +82,25 @@
   .btn-hero-outline { border: 1.5px solid var(--border); color: var(--text); background: var(--surface); }
   .btn-hero-outline:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
 
+  .quick-import {
+    max-width: 560px; margin: 1.5rem auto 0;
+    display: flex; gap: .5rem; align-items: center; flex-wrap: wrap;
+  }
+  .quick-import input {
+    flex: 1; min-width: 220px; padding: .7rem .9rem;
+    border: 1.5px solid var(--border); border-radius: 10px;
+    font-size: .9rem; background: var(--surface); color: var(--text);
+  }
+  .quick-import button {
+    padding: .7rem 1.2rem; border: none; border-radius: 10px;
+    background: var(--accent); color: #fff; font-size: .9rem;
+    font-weight: 500; cursor: pointer; white-space: nowrap;
+  }
+  .quick-import button:hover { opacity: .88; }
+  .quick-import button:disabled { opacity: .55; cursor: wait; }
+  .quick-msg { width: 100%; font-size: .85rem; min-height: 1.2rem; text-align: center; }
+  .quick-msg.err { color: #a8071a; }
+
   /* ── Section ── */
   .section-header {
     max-width: 1200px; margin: 0 auto;
@@ -220,7 +239,12 @@
 
 <div class="hero">
   <h1>展示你的 <em>HTML</em> 设计</h1>
-  <p>粘贴源码，一键发布，分享给任何人。</p>
+  <p>粘贴源码或作品链接，一键发布，分享给任何人。</p>
+  <div class="quick-import">
+    <input type="url" id="quick_url" placeholder="粘贴网页 / DeepSeek 分享链接，直接生成作品">
+    <button type="button" id="quick_btn">链接一键发布</button>
+    <div class="quick-msg" id="quick_msg"></div>
+  </div>
   {% if not session.user_id %}
   <div class="hero-actions">
     <a href="{{ url_for('register') }}" class="btn-hero btn-hero-solid">免费注册</a>
@@ -269,6 +293,50 @@
     </div>
   {% endif %}
 </div>
+
+<script>
+  // 首页链接一键发布：导入源码后走隐藏表单提交 /new，复用现有发布链路与审核
+  const quickUrl = document.getElementById('quick_url');
+  const quickBtn = document.getElementById('quick_btn');
+  const quickMsg = document.getElementById('quick_msg');
+  quickBtn.addEventListener('click', async () => {
+    const url = quickUrl.value.trim();
+    if (!url) { quickMsg.textContent = '请先粘贴链接'; quickMsg.className = 'quick-msg err'; return; }
+    quickBtn.disabled = true;
+    quickBtn.textContent = '生成中…';
+    quickMsg.textContent = '正在读取链接内容…';
+    quickMsg.className = 'quick-msg';
+    try {
+      const res = await fetch('/api/import', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'url=' + encodeURIComponent(url)
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || '导入失败');
+      // 构造隐藏表单提交到 /new，保持与手动发布完全一致的处理路径
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/new';
+      [['title', data.title || '导入的作品'], ['html_source', data.html],
+       ['description', '从链接导入'], ['is_public', '1']].forEach(([k, v]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden'; input.name = k; input.value = v;
+        form.appendChild(input);
+      });
+      document.body.appendChild(form);
+      form.submit();
+    } catch (e) {
+      quickMsg.textContent = '导入失败：' + e.message;
+      quickMsg.className = 'quick-msg err';
+      quickBtn.disabled = false;
+      quickBtn.textContent = '链接一键发布';
+    }
+  });
+  quickUrl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); quickBtn.click(); }
+  });
+</script>
 
 </body>
 </html>

@@ -1,11 +1,12 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, abort, flash
 from flask.wrappers import Request as FlaskRequest
 from werkzeug.security import generate_password_hash, check_password_hash
-import sqlite3, os, re, secrets
+import sqlite3, os, re, secrets, time
 from datetime import datetime, timedelta
 from functools import wraps
 from urllib.parse import urlparse
 import moderation
+import link_import
 
 class GalleryRequest(FlaskRequest):
     """覆盖 Werkzeug 默认 500KB 表单内存限制，放行 3MB 作品上传。"""
@@ -685,6 +686,27 @@ def view(slug):
     page = _page_or_403(slug)
     ctx = _fission_ctx(get_db(), page)
     return render_template('view.html', page=page, html_source=page['html_source'], **ctx)
+
+# ── API: 从链接导入作品源码 ──────────────────────────────────────────────────
+# 只抓取并审核后返回前端，不入库；真正发布仍走 /new，复用既有 3MB + 敏感词校验。
+
+@app.route('/api/import', methods=['POST'])
+def api_import():
+    url = request.form.get('url', '')
+    if not url:
+        payload = request.get_json(silent=True) or {}
+        url = payload.get('url', '')
+    try:
+        result = link_import.import_from_link(url)
+    except link_import.LinkImportError as e:
+        return jsonify(ok=False, error=str(e)), 400
+    # 纵深防御：抓取内容立即过审核，避免把违规源码交到前端
+    error = _check_submission(result['title'], result['html'], '')
+    if error:
+        return jsonify(ok=False, error=error), 400
+    return jsonify(ok=True, html=result['html'], title=result['title'],
+                   source_type=result['source_type'])
+
 
 # ── API: live preview ─────────────────────────────────────────────────────────
 

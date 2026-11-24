@@ -79,6 +79,20 @@
     background: #fff;
   }
 
+  .import-bar {
+    display: flex; gap: .5rem; padding: .7rem 1rem;
+    border-bottom: 1px solid var(--border); background: #fafbfc;
+    align-items: center; flex-wrap: wrap;
+  }
+  .import-bar input {
+    flex: 1; min-width: 180px; padding: .5rem .7rem;
+    border: 1.5px solid var(--border); border-radius: 8px; font-size: .85rem;
+  }
+  .import-bar .btn { padding: .5rem .9rem; font-size: .82rem; }
+  .import-msg { font-size: .8rem; width: 100%; display: none; }
+  .import-msg.ok { color: #389e0d; display: block; }
+  .import-msg.err { color: #a8071a; display: block; }
+
   .form-actions { margin-top: 1rem; display: flex; gap: .75rem; justify-content: flex-end; }
   .btn {
     padding: .65rem 1.4rem; border-radius: 8px; font-size: .9rem; font-weight: 500;
@@ -152,6 +166,11 @@
             <button type="button" class="btn" onclick="updatePreview()" style="padding: .3rem .7rem; font-size: .8rem;">刷新预览</button>
           </span>
         </div>
+        <div class="import-bar">
+          <input type="url" id="import_url" placeholder="粘贴网页链接或 DeepSeek 分享链接，导入为作品源码">
+          <button type="button" class="btn" id="import_btn">从链接导入</button>
+          <div class="import-msg" id="import_msg"></div>
+        </div>
         <textarea 
           class="editor-textarea" 
           id="html_source" 
@@ -222,6 +241,39 @@
     reader.readAsText(file, 'UTF-8');
     // 允许重复上传同一文件
     fileInput.value = '';
+  });
+
+  // 从链接导入：网页链接直接抓源码，DeepSeek 分享链接提取对话里的 html 代码块
+  const importUrl = document.getElementById('import_url');
+  const importBtn = document.getElementById('import_btn');
+  const importMsg = document.getElementById('import_msg');
+  importBtn.addEventListener('click', async () => {
+    const url = importUrl.value.trim();
+    if (!url) { alert('请先粘贴链接'); return; }
+    importBtn.disabled = true;
+    importBtn.textContent = '导入中…';
+    importMsg.className = 'import-msg';
+    try {
+      const res = await fetch('/api/import', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'url=' + encodeURIComponent(url)
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || '导入失败');
+      if (textarea.value.trim() && !confirm('导入将覆盖当前源码，是否继续？')) return;
+      textarea.value = data.html;
+      if (!titleInput.value.trim()) titleInput.value = data.title || '导入的作品';
+      updatePreview();
+      importMsg.textContent = '已导入 ' + (data.source_type === 'deepseek' ? 'DeepSeek 分享' : '网页') + '内容，请确认后发布';
+      importMsg.className = 'import-msg ok';
+    } catch (e) {
+      importMsg.textContent = '导入失败：' + e.message;
+      importMsg.className = 'import-msg err';
+    } finally {
+      importBtn.disabled = false;
+      importBtn.textContent = '从链接导入';
+    }
   });
 </script>
 
