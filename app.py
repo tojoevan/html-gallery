@@ -1,8 +1,8 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, abort, flash
 from flask.wrappers import Request as FlaskRequest
 from werkzeug.security import generate_password_hash, check_password_hash
-import sqlite3, os, re
-from datetime import datetime
+import sqlite3, os, re, secrets
+from datetime import datetime, timedelta
 from functools import wraps
 from urllib.parse import urlparse
 import moderation
@@ -44,7 +44,8 @@ def init_db():
                 email    TEXT,
                 handle   TEXT,
                 is_admin INTEGER NOT NULL DEFAULT 0,
-                trust_points INTEGER NOT NULL DEFAULT 0
+                trust_points INTEGER NOT NULL DEFAULT 0,
+                is_guest INTEGER NOT NULL DEFAULT 0
             )
         ''')
         
@@ -59,6 +60,7 @@ def init_db():
                 description TEXT    DEFAULT '',
                 is_public   INTEGER DEFAULT 1,
                 review_status TEXT   NOT NULL DEFAULT 'approved',
+                share_expires_at TEXT,
                 created     TEXT    NOT NULL,
                 updated     TEXT    NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id)
@@ -139,6 +141,10 @@ def migrate_db():
         if 'trust_points' not in cols:
             db.execute('ALTER TABLE users ADD COLUMN trust_points INTEGER NOT NULL DEFAULT 0')
 
+        # 限时：游客标记（注册时原地升级为普通用户）
+        if 'is_guest' not in cols:
+            db.execute('ALTER TABLE users ADD COLUMN is_guest INTEGER NOT NULL DEFAULT 0')
+
         # reports 表（老库补建）
         db.execute('''
             CREATE TABLE IF NOT EXISTS reports (
@@ -180,10 +186,13 @@ def migrate_db():
             ''')
             db.execute('DROP TABLE pages_old')
 
-        # pages.review_status：放在重建之后，确保老库升级不丢字段；存量作品默认 approved
+        # pages 新列放在重建之后，确保老库升级不丢字段
+        #   存量作品：review_status=approved（不误伤）、share_expires_at=NULL（视为永久）
         page_cols = {r['name'] for r in db.execute('PRAGMA table_info(pages)')}
         if 'review_status' not in page_cols:
             db.execute("ALTER TABLE pages ADD COLUMN review_status TEXT NOT NULL DEFAULT 'approved'")
+        if 'share_expires_at' not in page_cols:
+            db.execute('ALTER TABLE pages ADD COLUMN share_expires_at TEXT')
 
 init_db()
 
@@ -196,6 +205,69 @@ def login_required(f):
             return redirect(url_for('login', next=request.path))
         return f(*args, **kwargs)
     return decorated
+
+# ── 游客身份（阶段2）─────────────────────────────────────────────────────────
+TRIAL_DAYS = 3  # 匿名作品分享有效期
+
+
+def _is_guest(db, user_id):
+    if not user_id:
+        return False
+    row = db.execute('SELECT is_guest FROM users WHERE id=?', (user_id,)).fetchone()
+    return bool(row and row['is_guest'])
+
+
+def _ensure_identity():
+    """未登录则自动创建游客账号并写入 session；返回 user_id。"""
+    if 'user_id' in session:
+        return session['user_id']
+    db = get_db()
+    while True:
+        username = 'guest-' + secrets.token_hex(5)
+        if not db.execute('SELECT 1 FROM users WHERE username=?', (username,)).fetchone():
+            break
+    handle = 'guest-' + secrets.token_hex(4)
+    while db.execute('SELECT 1 FROM users WHERE handle=?', (handle,)).fetchone():
+        handle = 'guest-' + secrets.token_hex(4)
+    db.execute(
+        '''INSERT INTO users (username, password, created, email, handle, is_guest)
+           VALUES (?,?,?,?,?,1)''',
+        (username, generate_password_hash(secrets.token_urlsafe(24)),
+         datetime.now().isoformat(), None, handle)
+    )
+    db.commit()
+    uid = db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone()['id']
+    session['user_id'] = uid
+    session['username'] = username
+    return uid
+
+
+def identity_required(f):
+    """游客或注册用户都可访问；未登录自动创建游客身份。"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        _ensure_identity()
+        return f(*args, **kwargs)
+    return decorated
+
+
+def _expiry_for(user_id, db):
+    """游客作品 3 天到期；注册用户与管理员永久（NULL）。"""
+    row = db.execute('SELECT is_guest, is_admin FROM users WHERE id=?', (user_id,)).fetchone()
+    if row and row['is_guest'] and not row['is_admin']:
+        return (datetime.now() + timedelta(days=TRIAL_DAYS)).isoformat()
+    return None
+
+
+def _is_expired(page):
+    """到期判断：NULL 视为永久；坏数据不误伤（视为未到期）。"""
+    raw = page['share_expires_at']
+    if not raw:
+        return False
+    try:
+        return datetime.fromisoformat(raw) <= datetime.now()
+    except (ValueError, TypeError):
+        return False
 
 def slugify(text):
     text = text.lower().strip()
@@ -231,11 +303,14 @@ def _is_admin(user_id):
 @app.route('/')
 def index():
     db = get_db()
+    now = datetime.now().isoformat()
     pages = db.execute(
         '''SELECT p.*, u.username FROM pages p
            JOIN users u ON p.user_id = u.id
            WHERE p.is_public = 1 AND p.review_status = 'approved'
-           ORDER BY p.updated DESC LIMIT 60'''
+             AND (p.share_expires_at IS NULL OR p.share_expires_at > ?)
+           ORDER BY p.updated DESC LIMIT 60''',
+        (now,)
     ).fetchall()
     return render_template('index.html', pages=pages)
 
@@ -262,23 +337,38 @@ def register():
             error = '公开标识限 3-30 位小写字母、数字、下划线或连字符'
         else:
             db = get_db()
-            if db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone():
+            # 游客注册：原地升级同一 user_id，避免作品迁移
+            guest_uid = session.get('user_id')
+            upgrade_uid = guest_uid if _is_guest(db, guest_uid) else None
+            name_row = db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone()
+            handle_row = db.execute('SELECT id FROM users WHERE handle=?', (handle,)).fetchone() if handle else None
+            if name_row and name_row['id'] != upgrade_uid:
                 error = '用户名已存在'
-            elif handle and db.execute('SELECT id FROM users WHERE handle=?', (handle,)).fetchone():
+            elif handle_row and handle_row['id'] != upgrade_uid:
                 error = '公开标识已被占用'
             else:
                 if not handle:
-                    import secrets
                     handle = 'user-' + secrets.token_hex(3)
-                    while db.execute('SELECT 1 FROM users WHERE handle=?', (handle,)).fetchone():
+                    while db.execute('SELECT 1 FROM users WHERE handle=? AND id!=?',
+                                     (handle, upgrade_uid or -1)).fetchone():
                         handle = 'user-' + secrets.token_hex(3)
-                db.execute(
-                    'INSERT INTO users (username, email, password, created, handle) VALUES (?,?,?,?,?)',
-                    (username, email, generate_password_hash(password), datetime.now().isoformat(), handle)
-                )
+                if upgrade_uid:
+                    # 原地升级：保留 user_id 与全部作品，游客作品一并转永久
+                    db.execute(
+                        '''UPDATE users SET username=?, email=?, password=?, handle=?, is_guest=0
+                           WHERE id=?''',
+                        (username, email, generate_password_hash(password), handle, upgrade_uid)
+                    )
+                    db.execute('UPDATE pages SET share_expires_at=NULL WHERE user_id=?', (upgrade_uid,))
+                    uid = upgrade_uid
+                else:
+                    db.execute(
+                        'INSERT INTO users (username, email, password, created, handle) VALUES (?,?,?,?,?)',
+                        (username, email, generate_password_hash(password), datetime.now().isoformat(), handle)
+                    )
+                    uid = db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone()['id']
                 db.commit()
-                user = db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone()
-                session['user_id'] = user['id']
+                session['user_id'] = uid
                 session['username'] = username
                 return redirect(url_for('dashboard'))
         return render_template('auth.html', mode='register', error=error)
@@ -381,12 +471,43 @@ def settings():
 @login_required
 def dashboard():
     db = get_db()
-    pages = db.execute(
+    rows = db.execute(
         'SELECT * FROM pages WHERE user_id=? ORDER BY updated DESC',
         (session['user_id'],)
     ).fetchall()
+    pages = []
+    for row in rows:
+        item = dict(row)
+        item['days_left'] = None
+        if item.get('share_expires_at'):
+            try:
+                delta = datetime.fromisoformat(item['share_expires_at']) - datetime.now()
+                item['days_left'] = max(0, delta.days + (1 if delta.total_seconds() > 0 else 0))
+            except (ValueError, TypeError):
+                item['days_left'] = None
+        pages.append(item)
     return render_template('dashboard.html', pages=pages,
-                           is_admin=_is_admin(session['user_id']), badges=_badges(session['user_id']))
+                           is_admin=_is_admin(session['user_id']),
+                           is_guest=_is_guest(db, session['user_id']),
+                           badges=_badges(session['user_id']))
+
+
+@app.route('/renew/<int:page_id>', methods=['POST'])
+@login_required
+def renew_page(page_id):
+    """匿名作品续期 3 天（从当前时间起算）；注册/管理员作品永久无需续期。"""
+    db = get_db()
+    page = db.execute('SELECT * FROM pages WHERE id=?', (page_id,)).fetchone()
+    if not page or page['user_id'] != session['user_id']:
+        abort(403)
+    if not page['share_expires_at']:
+        return redirect(url_for('dashboard'))
+    expiry = _expiry_for(session['user_id'], db)
+    if expiry:
+        db.execute('UPDATE pages SET share_expires_at=?, updated=? WHERE id=?',
+                   (expiry, datetime.now().isoformat(), page_id))
+        db.commit()
+    return redirect(url_for('dashboard'))
 
 # ── Create / Edit ─────────────────────────────────────────────────────────────
 
@@ -404,7 +525,7 @@ def _check_submission(title, html_source, description):
 
 
 @app.route('/new', methods=['GET', 'POST'])
-@login_required
+@identity_required
 def new_page():
     if request.method == 'POST':
         title = request.form.get('title', '').strip() or '未命名'
@@ -419,10 +540,13 @@ def new_page():
         now = datetime.now().isoformat()
         db = get_db()
         slug = unique_slug(title, db, session['user_id'])
+        expiry = _expiry_for(session['user_id'], db)
         db.execute(
-            '''INSERT INTO pages (user_id,title,slug,html_source,description,is_public,review_status,created,updated)
-               VALUES (?,?,?,?,?,?,?,?,?)''',
-            (session['user_id'], title, slug, html_source, description, is_public, 'approved', now, now)
+            '''INSERT INTO pages (user_id,title,slug,html_source,description,is_public,review_status,
+                                  share_expires_at,created,updated)
+               VALUES (?,?,?,?,?,?,?,?,?,?)''',
+            (session['user_id'], title, slug, html_source, description, is_public, 'approved',
+             expiry, now, now)
         )
         db.commit()
         return redirect(url_for('dashboard'))
@@ -509,7 +633,15 @@ def _page_or_403(slug, handle=None):
     if not page['is_public']:
         if not (is_owner or is_admin):
             abort(403)
+    # 分享有效期：到期后对外 410（数据不删），作者与管理员不受限
+    if 'share_expires_at' in page.keys() and _is_expired(page) and not (is_owner or is_admin):
+        abort(410)
     return page
+
+@app.errorhandler(410)
+def gone(error):
+    return render_template('gone.html'), 410
+
 
 @app.route('/p/<slug>')
 def preview(slug):

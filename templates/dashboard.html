@@ -161,6 +161,12 @@
     <a href="{{ url_for('new_page') }}" class="btn-add">+ 新建页面</a>
   </div>
 
+  {% if is_guest %}
+  <div style="background:#fff7e6;border:1px solid #ffd591;color:#ad4e00;padding:12px 16px;border-radius:8px;margin-bottom:18px;font-size:.92rem;">
+    当前为临时身份，作品分享链接 <strong>3 天后失效</strong>（作品不会删除，可续期）。<a href="{{ url_for('register') }}" style="color:#ad4e00;font-weight:bold;">注册即可永久保存 + 自定义链接</a> →
+  </div>
+  {% endif %}
+
   {% if pages %}
   <div class="grid">
     {% for page in pages %}
@@ -174,6 +180,12 @@
           <span>{{ '公开' if page.is_public else '私密' }}</span>
           {% if page.review_status != 'approved' %}
           <span style="color:#a8071a;">{{ '复审中' if page.review_status == 'pending_review' else '已下架' }}</span>
+          {% endif %}
+          {% if page.days_left is not none %}
+          <span style="color:#ad4e00;">剩余 {{ page.days_left }} 天</span>
+          <form method="post" action="{{ url_for('renew_page', page_id=page.id) }}" style="display:inline;">
+            <button type="submit" style="background:none;border:none;color:#5b6af0;cursor:pointer;padding:0;font-size:inherit;">续期</button>
+          </form>
           {% endif %}
           <div class="card-actions">
             <a href="{{ url_for('edit_page', page_id=page.id) }}">编辑</a>
