@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>林间 · 个人作品集</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0d0f1a; color: #e8eaf6; min-height: 100vh; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 24px 60px; }
+  header { min-height: 78vh; display: flex; flex-direction: column; justify-content: center; position: relative; }
+  .glow { position: absolute; width: 420px; height: 420px; border-radius: 50%; filter: blur(100px); opacity: .35; z-index: 0; }
+  .glow.a { background: #6c5ce7; top: -80px; right: -60px; }
+  .glow.b { background: #00b894; bottom: 40px; left: -120px; }
+  header > * { position: relative; z-index: 1; }
+  .badge { display: inline-block; font-size: 13px; letter-spacing: 2px; color: #a29bfe; border: 1px solid #454168; padding: 7px 16px; border-radius: 30px; margin-bottom: 26px; }
+  h1 { font-size: clamp(2.6rem, 8vw, 5.2rem); line-height: 1.08; font-weight: 800; letter-spacing: -2px; }
+  h1 span { background: linear-gradient(100deg, #a29bfe, #00cec9); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { font-size: 1.15rem; color: #b2b6d0; margin-top: 22px; max-width: 560px; line-height: 1.8; }
+  .tags { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
+  .tag { font-size: 13px; padding: 8px 16px; background: #191c30; border: 1px solid #2c3050; border-radius: 8px; color: #c8cbe6; }
+  .scroll { margin-top: 46px; font-size: 12px; color: #6c708f; letter-spacing: 1px; }
+  h2 { font-size: 1.6rem; margin: 50px 0 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px; }
+  .card { background: #151829; border: 1px solid #262a45; border-radius: 16px; padding: 26px; transition: .25s; }
+  .card:hover { transform: translateY(-5px); border-color: #6c5ce7; }
+  .card .ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-size: 22px; margin-bottom: 18px; }
+  .card h3 { font-size: 1.1rem; margin-bottom: 8px; }
+  .card p { font-size: .9rem; color: #8f94b8; line-height: 1.7; }
+  .contact { margin-top: 56px; text-align: center; padding: 40px 20px; border: 1px dashed #3a3e5e; border-radius: 18px; }
+  .contact p { color: #9a9ec0; margin-bottom: 18px; }
+  .mail { display: inline-block; background: linear-gradient(100deg, #6c5ce7, #00b894); color: #fff; text-decoration: none; padding: 12px 30px; border-radius: 10px; font-weight: 600; }
+  footer { text-align: center; color: #5b5f7d; font-size: 12px; margin-top: 40px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="glow a"></div><div class="glow b"></div>
+    <span class="badge">PRODUCT DESIGNER · 2026</span>
+    <h1>你好，我是<span>林间</span><br>把想法变成界面的人。</h1>
+    <p class="sub">独立设计师与前端开发者，专注于数字产品的体验设计。相信好设计是看得见的克制，也是用得出来的舒服。</p>
+    <div class="tags">
+      <span class="tag">交互设计</span><span class="tag">设计系统</span>
+      <span class="tag">前端开发</span><span class="tag">原型制作</span>
+      <span class="tag">用户研究</span>
+    </div>
+    <div class="scroll">↓ 向下看看我的作品</div>
+  </header>
+
+  <h2>精选作品</h2>
+  <div class="grid">
+    <div class="card"><div class="ico" style="background:#2d2150">📊</div><h3>数据洞察平台</h3><p>为中小团队打造的可视化分析工作台，让复杂数据一目了然。</p></div>
+    <div class="card"><div class="ico" style="background:#123c34">🌿</div><h3>绿意生活 App</h3><p>以植物养成串联日常习惯，用温和的方式陪用户坚持下去。</p></div>
+    <div class="card"><div class="ico" style="background:#3a2340">🎨</div><h3>配色灵感工具</h3><p>从图片提取色彩并生成完整色板，设计师的随身灵感库。</p></div>
+  </div>
+
+  <div class="contact">
+    <p>有有趣的想法？我们一起聊聊。</p>
+    <a class="mail" href="mailto:hello@example.com">联系我 →</a>
+  </div>
+  <footer>© 2026 林间 · 用 HTML 亲手搭建的个人主页</footer>
+</div>
+</body>
+</html>

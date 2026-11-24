@@ -46,7 +46,7 @@ fi
 
 echo "==> [2/5] 备份线上代码（py + templates + static + 词库）"
 $SSH "cd '$REMOTE_DIR' && mkdir -p .deploy-backup && \
-  EXTRA=''; for f in moderation.py rescan.py link_import.py metrics.py sensitive_words.txt; do [ -e \"\$f\" ] && EXTRA=\"\$EXTRA \$f\"; done; \
+  EXTRA=''; for f in moderation.py rescan.py link_import.py metrics.py seed_samples.py sensitive_words.txt; do [ -e \"\$f\" ] && EXTRA=\"\$EXTRA \$f\"; done; \
   tar czf \".deploy-backup/code-\$(date +%Y%m%d-%H%M%S).tar.gz\" \
   app.py templates static \$EXTRA && \
   echo '备份已存 .deploy-backup/'"

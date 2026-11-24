@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>生日快乐</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { min-height: 100vh; display: grid; place-items: center; font-family: -apple-system, "PingFang SC", sans-serif;
+         background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 50%, #fef9c3 100%); overflow: hidden; padding: 24px; }
+  .balloon { position: absolute; border-radius: 50% 50% 45% 45%; opacity: .7; animation: float 7s ease-in-out infinite; }
+  .balloon::after { content: ''; position: absolute; bottom: -60px; left: 50%; width: 1px; height: 60px; background: rgba(255,255,255,.5); }
+  .b1 { width: 70px; height: 88px; background: #ff6b81; left: 8%; top: 12%; animation-delay: 0s; }
+  .b2 { width: 54px; height: 70px; background: #a29bfe; right: 12%; top: 18%; animation-delay: 1.5s; }
+  .b3 { width: 62px; height: 78px; background: #ffd166; left: 18%; bottom: 14%; animation-delay: 3s; }
+  .b4 { width: 48px; height: 62px; background: #06d6a0; right: 8%; bottom: 20%; animation-delay: 2s; }
+  @keyframes float { 0%,100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-24px) rotate(3deg); } }
+  .card { position: relative; z-index: 2; background: rgba(255,255,255,.88); backdrop-filter: blur(10px);
+          border-radius: 28px; padding: 50px 42px 42px; text-align: center; max-width: 480px; width: 100%;
+          box-shadow: 0 24px 70px rgba(214,90,120,.25); border: 2px solid #fff; }
+  .crown { font-size: 40px; margin-bottom: 8px; animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.12); } }
+  h1 { font-size: 2.4rem; color: #e8517a; letter-spacing: -1px; margin-bottom: 8px; }
+  .en { font-size: .8rem; letter-spacing: 4px; color: #b8a0ae; margin-bottom: 24px; }
+  p { color: #7a6a72; line-height: 1.9; font-size: .96rem; }
+  .cake { margin: 30px auto 10px; position: relative; width: 160px; }
+  .plate { height: 10px; background: #e9d5dd; border-radius: 50%; width: 170px; margin: 0 auto; position: absolute; bottom: 0; left: -5px; }
+  .layer { margin: 0 auto; border-radius: 8px; }
+  .l1 { width: 150px; height: 46px; background: linear-gradient(#ffc3d4, #ff9eb9); position: relative; }
+  .l2 { width: 120px; height: 40px; background: linear-gradient(#ffe0a8, #ffc37a); position: relative; margin-top: -2px; }
+  .icing { position: absolute; top: -7px; left: 0; right: 0; height: 14px; background: #fff; border-radius: 50%; }
+  .candle { position: absolute; top: -38px; width: 6px; height: 32px; background: repeating-linear-gradient(45deg,#ff6b81 0 6px,#fff 6px 12px); }
+  .candle::before { content: ''; position: absolute; top: -14px; left: -3px; width: 12px; height: 16px;
+                    background: radial-gradient(ellipse at bottom, #ffd166, #ff8c42 60%, transparent 70%);
+                    border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: flicker .7s ease-in-out infinite alternate; }
+  @keyframes flicker { from { transform: scaleY(1) rotate(-4deg); } to { transform: scaleY(1.15) rotate(4deg); } }
+  .c2 { right: 26px; } .c1 { left: 26px; }
+  .wish { margin-top: 22px; font-size: .85rem; color: #c98ba1; }
+  .confetti { position: absolute; width: 8px; height: 8px; opacity: .6; top: -10px; animation: fall linear infinite; }
+  @keyframes fall { to { transform: translateY(105vh) rotate(720deg); } }
+</style>
+</head>
+<body>
+  <div class="balloon b1"></div><div class="balloon b2"></div>
+  <div class="balloon b3"></div><div class="balloon b4"></div>
+  <div class="card">
+    <div class="crown">👑</div>
+    <h1>生日快乐！</h1>
+    <div class="en">HAPPY BIRTHDAY</div>
+    <p>愿这一年的每一天，<br>都有微小的好事悄悄发生。<br>愿你所盼皆如愿，所行皆坦途。</p>
+    <div class="cake">
+      <div class="candle c1"></div><div class="candle c2"></div>
+      <div class="l1"><div class="icing"></div></div>
+      <div class="l2"><div class="icing"></div></div>
+      <div class="plate"></div>
+    </div>
+    <div class="wish">✦ 许个愿吧，它一定会实现 ✦</div>
+  </div>
+<script>
+  const colors = ['#ff6b81','#a29bfe','#ffd166','#06d6a0','#f78ca0'];
+  for (let i = 0; i < 30; i++) {
+    const d = document.createElement('div');
+    d.className = 'confetti';
+    d.style.left = Math.random() * 100 + 'vw';
+    d.style.background = colors[i % colors.length];
+    d.style.animationDuration = (3 + Math.random() * 4) + 's';
+    d.style.animationDelay = (Math.random() * 5) + 's';
+    d.style.borderRadius = i % 2 ? '50%' : '2px';
+    document.body.appendChild(d);
+  }
+</script>
+</body>
+</html>
