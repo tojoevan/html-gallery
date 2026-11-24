@@ -117,6 +117,12 @@
     <h1>{{ '编辑页面' if mode == 'edit' else '新建页面' }}</h1>
   </div>
 
+  {% if error %}
+  <div style="background:#fff2f0;border:1.5px solid #ffccc7;color:#a8071a;padding:.8rem 1rem;border-radius:8px;margin-bottom:1rem;font-size:.9rem;">
+    {{ error }}
+  </div>
+  {% endif %}
+
   <form method="post">
     <div class="form-row">
       <div class="form-group" style="flex: 2;">

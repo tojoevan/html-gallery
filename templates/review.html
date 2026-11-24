@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>举报复审 - HTML Gallery</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; background: #f8f9fb; color: #1a1a2e; padding: 2rem; }
+  h1 { font-size: 1.4rem; margin-bottom: 1.5rem; }
+  .card { background: #fff; border: 1px solid #e8eaed; border-radius: 10px; padding: 1.2rem; margin-bottom: 1rem; }
+  .meta { font-size: .85rem; color: #8a8fa8; margin-bottom: .5rem; }
+  .title { font-weight: 600; margin-bottom: .5rem; }
+  .reason { font-size: .9rem; margin: .6rem 0; }
+  .actions { display: flex; gap: .6rem; margin-top: .8rem; }
+  button { padding: .45rem 1rem; border-radius: 7px; border: 1px solid #e8eaed; cursor: pointer; font-size: .85rem; background: #fff; }
+  .uphold { background: #fff2f0; border-color: #ffccc7; color: #a8071a; }
+  .dismiss { background: #eef0ff; border-color: #d8dcff; color: #5b6af0; }
+  .empty { color: #8a8fa8; padding: 2rem; text-align: center; }
+  a { color: #5b6af0; text-decoration: none; }
+</style>
+</head>
+<body>
+  <h1>举报复审 <span style="font-size:.85rem;font-weight:normal;"><a href="{{ url_for('dashboard') }}">← 返回</a></span></h1>
+  {% if not reports %}
+    <div class="card empty">暂无待复审举报</div>
+  {% else %}
+    {% for r in reports %}
+    <div class="card" id="report-{{ r.id }}">
+      <div class="title">{{ r.title }} <span class="meta">by {{ r.author }} · 举报人 {{ r.reporter }}</span></div>
+      <div class="meta">举报理由：{{ r.reason or '（未填写）' }} · {{ r.created }}</div>
+      <div class="actions">
+        <button class="uphold" onclick="review({{ r.id }}, 'reject')">确认违规 · 下架</button>
+        <button class="dismiss" onclick="review({{ r.id }}, 'approve')">驳回举报 · 恢复</button>
+        <a href="{{ url_for('preview', slug=r.slug) }}" target="_blank" style="padding:.45rem .5rem;">查看作品 ↗</a>
+      </div>
+    </div>
+    {% endfor %}
+  {% endif %}
+<script>
+  function review(id, action) {
+    fetch('/api/review/' + id + '/' + action, { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) { document.getElementById('report-' + id).remove(); }
+        else { alert(d.error || '操作失败'); }
+      });
+  }
+</script>
+</body>
+</html>

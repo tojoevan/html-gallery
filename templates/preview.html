@@ -49,6 +49,11 @@
     padding: .4rem .85rem; border-radius: 8px;
   }
   .nav-links a:hover { color: var(--text); background: var(--bg); }
+  .report-btn {
+    font-size: .875rem; color: var(--muted); padding: .4rem .85rem; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); cursor: pointer;
+  }
+  .report-btn:hover { color: #a8071a; border-color: #ffccc7; }
   .like-btn {
     display: inline-flex; align-items: center; gap: .3rem;
     padding: .3rem .7rem; border-radius: 20px;
@@ -161,6 +166,9 @@
     {% else %}
       <a href="{{ url_for('index') }}">返回</a>
     {% endif %}
+    {% if session.user_id and session.user_id != page.user_id %}
+      <button class="report-btn" onclick="reportPage()" title="举报违规内容">举报</button>
+    {% endif %}
     {% if session.user_id %}
       <a href="{{ url_for('logout') }}">退出</a>
     {% endif %}
@@ -218,6 +226,19 @@
         document.getElementById('likeCount').innerText = d.count;
         document.getElementById('likeBtn').classList.toggle('liked', d.liked);
       });
+  }
+
+  function reportPage() {
+    const reason = prompt('请说明举报理由（违规内容类型，200 字内）：');
+    if (!reason || !reason.trim()) return;
+    fetch('/api/report/' + pageId, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason.trim() })
+    }).then(r => r.json()).then(d => {
+      alert(d.error || d.message || '已提交');
+      if (d.success) location.reload();
+    });
   }
 
   // Load comments

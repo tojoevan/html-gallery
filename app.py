@@ -1,12 +1,27 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, abort, flash
+from flask.wrappers import Request as FlaskRequest
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3, os, re
 from datetime import datetime
 from functools import wraps
+from urllib.parse import urlparse
+import moderation
+
+class GalleryRequest(FlaskRequest):
+    """覆盖 Werkzeug 默认 500KB 表单内存限制，放行 3MB 作品上传。"""
+    max_form_memory_size = 3 * 1024 * 1024 + 64 * 1024
+
 
 app = Flask(__name__)
+app.request_class = GalleryRequest
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-change-in-prod')
-DATABASE = os.path.join(app.instance_path, 'gallery.db')
+# 环境变量可覆盖 instance 目录（测试用；生产不设即用 Flask 默认 instance/）
+INSTANCE_DIR = os.environ.get('GALLERY_INSTANCE', app.instance_path)
+app.instance_path = INSTANCE_DIR
+DATABASE = os.path.join(INSTANCE_DIR, 'gallery.db')
+
+# 请求体总上限，留 64KB 给表单其他字段
+app.config['MAX_CONTENT_LENGTH'] = 3 * 1024 * 1024 + 64 * 1024
 
 # ── DB helpers ──────────────────────────────────────────────────────────────
 
@@ -26,7 +41,10 @@ def init_db():
                 username TEXT    UNIQUE NOT NULL,
                 password TEXT    NOT NULL,
                 created  TEXT    NOT NULL,
-                email    TEXT
+                email    TEXT,
+                handle   TEXT,
+                is_admin INTEGER NOT NULL DEFAULT 0,
+                trust_points INTEGER NOT NULL DEFAULT 0
             )
         ''')
         
@@ -40,6 +58,7 @@ def init_db():
                 html_source TEXT    NOT NULL,
                 description TEXT    DEFAULT '',
                 is_public   INTEGER DEFAULT 1,
+                review_status TEXT   NOT NULL DEFAULT 'approved',
                 created     TEXT    NOT NULL,
                 updated     TEXT    NOT NULL,
                 FOREIGN KEY(user_id) REFERENCES users(id)
@@ -74,7 +93,23 @@ def init_db():
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
         ''')
-        
+
+        # reports 表：用户举报 + 复审状态
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS reports (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id     INTEGER NOT NULL,
+                reporter_id INTEGER NOT NULL,
+                reason      TEXT,
+                status      TEXT    NOT NULL DEFAULT 'pending',
+                created     TEXT    NOT NULL,
+                reviewed    TEXT,
+                UNIQUE(page_id, reporter_id),
+                FOREIGN KEY(page_id) REFERENCES pages(id),
+                FOREIGN KEY(reporter_id) REFERENCES users(id)
+            )
+        ''')
+
         db.commit()
 
     migrate_db()
@@ -100,6 +135,26 @@ def migrate_db():
             db.execute('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0')
         db.execute("UPDATE users SET is_admin=1 WHERE username='tojoevan'")
 
+        # 审核：举报声誉点（徽章由此派生）
+        if 'trust_points' not in cols:
+            db.execute('ALTER TABLE users ADD COLUMN trust_points INTEGER NOT NULL DEFAULT 0')
+
+        # reports 表（老库补建）
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS reports (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_id     INTEGER NOT NULL,
+                reporter_id INTEGER NOT NULL,
+                reason      TEXT,
+                status      TEXT    NOT NULL DEFAULT 'pending',
+                created     TEXT    NOT NULL,
+                reviewed    TEXT,
+                UNIQUE(page_id, reporter_id),
+                FOREIGN KEY(page_id) REFERENCES pages(id),
+                FOREIGN KEY(reporter_id) REFERENCES users(id)
+            )
+        ''')
+
         # pages：仅当 slug 仍是全局唯一时重建（老结构）
         page_sql = db.execute("SELECT sql FROM sqlite_master WHERE name='pages'").fetchone()[0]
         if re.search(r'\bslug\s+TEXT\s+UNIQUE', page_sql):
@@ -124,6 +179,11 @@ def migrate_db():
                 SELECT id,user_id,title,slug,html_source,description,is_public,created,updated FROM pages_old
             ''')
             db.execute('DROP TABLE pages_old')
+
+        # pages.review_status：放在重建之后，确保老库升级不丢字段；存量作品默认 approved
+        page_cols = {r['name'] for r in db.execute('PRAGMA table_info(pages)')}
+        if 'review_status' not in page_cols:
+            db.execute("ALTER TABLE pages ADD COLUMN review_status TEXT NOT NULL DEFAULT 'approved'")
 
 init_db()
 
@@ -160,13 +220,21 @@ def unique_slug(base, db, user_id, exclude_id=None):
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 
+def _is_admin(user_id):
+    if not user_id:
+        return False
+    db = get_db()
+    row = db.execute('SELECT is_admin FROM users WHERE id=?', (user_id,)).fetchone()
+    return bool(row and row['is_admin'])
+
+
 @app.route('/')
 def index():
     db = get_db()
     pages = db.execute(
         '''SELECT p.*, u.username FROM pages p
            JOIN users u ON p.user_id = u.id
-           WHERE p.is_public = 1
+           WHERE p.is_public = 1 AND p.review_status = 'approved'
            ORDER BY p.updated DESC LIMIT 60'''
     ).fetchall()
     return render_template('index.html', pages=pages)
@@ -227,6 +295,10 @@ def login():
             session['user_id'] = user['id']
             session['username'] = user['username']
             next_url = request.args.get('next') or url_for('dashboard')
+            # 只允许站内相对路径，防开放重定向（//evil.com 的 netloc 非空会被挡）
+            parsed = urlparse(next_url)
+            if parsed.netloc or not parsed.path.startswith('/'):
+                next_url = url_for('dashboard')
             return redirect(next_url)
         return render_template('auth.html', mode='login', error='用户名或密码错误')
     return render_template('auth.html', mode='login')
@@ -313,9 +385,23 @@ def dashboard():
         'SELECT * FROM pages WHERE user_id=? ORDER BY updated DESC',
         (session['user_id'],)
     ).fetchall()
-    return render_template('dashboard.html', pages=pages)
+    return render_template('dashboard.html', pages=pages,
+                           is_admin=_is_admin(session['user_id']), badges=_badges(session['user_id']))
 
 # ── Create / Edit ─────────────────────────────────────────────────────────────
+
+MAX_HTML_BYTES = 3 * 1024 * 1024  # 3MB 后端硬限制（前端已有校验，此处防绕过）
+
+
+def _check_submission(title, html_source, description):
+    """统一校验：3MB 上限 + 敏感词扫描。返回错误文案或 None。"""
+    if len(html_source.encode('utf-8')) > MAX_HTML_BYTES:
+        return 'HTML 文件不能超过 3MB'
+    hit, word, field = moderation.scan(title, description, html_source)
+    if hit:
+        return f'内容未通过审核：{field}含敏感词「{word}」，请修改后重试'
+    return None
+
 
 @app.route('/new', methods=['GET', 'POST'])
 @login_required
@@ -325,12 +411,18 @@ def new_page():
         html_source = request.form.get('html_source', '')
         description = request.form.get('description', '').strip()
         is_public = 1 if request.form.get('is_public') else 0
+        error = _check_submission(title, html_source, description)
+        if error:
+            return render_template('editor.html', page={'title': title, 'html_source': html_source,
+                                                          'description': description, 'is_public': is_public},
+                                   mode='new', error=error)
         now = datetime.now().isoformat()
         db = get_db()
         slug = unique_slug(title, db, session['user_id'])
         db.execute(
-            'INSERT INTO pages (user_id,title,slug,html_source,description,is_public,created,updated) VALUES (?,?,?,?,?,?,?,?)',
-            (session['user_id'], title, slug, html_source, description, is_public, now, now)
+            '''INSERT INTO pages (user_id,title,slug,html_source,description,is_public,review_status,created,updated)
+               VALUES (?,?,?,?,?,?,?,?,?)''',
+            (session['user_id'], title, slug, html_source, description, is_public, 'approved', now, now)
         )
         db.commit()
         return redirect(url_for('dashboard'))
@@ -348,9 +440,16 @@ def edit_page(page_id):
         html_source = request.form.get('html_source', '')
         description = request.form.get('description', '').strip()
         is_public = 1 if request.form.get('is_public') else 0
+        error = _check_submission(title, html_source, description)
+        if error:
+            return render_template('editor.html', page=dict(page, title=title, html_source=html_source,
+                                                            description=description, is_public=is_public),
+                                   mode='edit', error=error)
         now = datetime.now().isoformat()
+        # 内容变更后已重新扫描通过，恢复审核状态（举报导致的 rejected 也随新内容解除）
         db.execute(
-            'UPDATE pages SET title=?,html_source=?,description=?,is_public=?,updated=? WHERE id=?',
+            '''UPDATE pages SET title=?,html_source=?,description=?,is_public=?,review_status='approved',updated=?
+               WHERE id=?''',
             (title, html_source, description, is_public, now, page_id)
         )
         db.commit()
@@ -402,8 +501,13 @@ def _page_or_403(slug, handle=None):
         ).fetchone()
     if not page:
         abort(404)
+    is_owner = 'user_id' in session and session['user_id'] == page['user_id']
+    is_admin = 'user_id' in session and _is_admin(session['user_id'])
+    # 审核未通过/待复审：对外一律 404（不暴露存在），作者与管理员仍可见
+    if page['review_status'] != 'approved' and not (is_owner or is_admin):
+        abort(404)
     if not page['is_public']:
-        if 'user_id' not in session or session['user_id'] != page['user_id']:
+        if not (is_owner or is_admin):
             abort(403)
     return page
 
@@ -560,6 +664,94 @@ def delete_comment(comment_id):
     db.execute('DELETE FROM comments WHERE id=?', (comment_id,))
     db.commit()
     return jsonify({'success': True})
+
+# ── Moderation: 举报 / 复审 / 激励 ──────────────────────────────────────────
+
+GUARDIAN_BADGE_THRESHOLD = 5  # 有效举报达标自动授予「守护者」徽章
+
+
+def _badges(user_id):
+    """徽章由 trust_points 派生，不单独建表。"""
+    db = get_db()
+    row = db.execute('SELECT trust_points FROM users WHERE id=?', (user_id,)).fetchone()
+    if not row:
+        return []
+    badges = []
+    if row['trust_points'] >= GUARDIAN_BADGE_THRESHOLD:
+        badges.append('守护者')
+    return badges
+
+
+@app.route('/api/report/<int:page_id>', methods=['POST'])
+@login_required
+def api_report(page_id):
+    db = get_db()
+    page = db.execute('SELECT id, user_id, review_status FROM pages WHERE id=?', (page_id,)).fetchone()
+    if not page:
+        return jsonify({'error': '页面不存在'}), 404
+    if page['user_id'] == session['user_id']:
+        return jsonify({'error': '不能举报自己的作品'}), 400
+    if page['review_status'] != 'approved':
+        return jsonify({'error': '该作品已在复审中'}), 400
+    reason = (request.json or {}).get('reason', '').strip()[:200]
+    try:
+        db.execute(
+            'INSERT INTO reports (page_id,reporter_id,reason,status,created) VALUES (?,?,?,?,?)',
+            (page_id, session['user_id'], reason, 'pending', datetime.now().isoformat())
+        )
+    except sqlite3.IntegrityError:
+        return jsonify({'error': '你已举报过该作品'}), 400
+    # 举报即将作品转入待复审：对外 404，作者和管理员仍可见
+    db.execute("UPDATE pages SET review_status='pending_review' WHERE id=?", (page_id,))
+    db.commit()
+    return jsonify({'success': True, 'message': '举报已提交，作品进入复审'})
+
+
+@app.route('/admin/review')
+@login_required
+def admin_review():
+    if not _is_admin(session['user_id']):
+        abort(403)
+    db = get_db()
+    rows = db.execute(
+        '''SELECT r.*, p.title, p.slug, u.handle, u.username AS author,
+                  ru.username AS reporter
+           FROM reports r JOIN pages p ON r.page_id=p.id
+           JOIN users u ON p.user_id=u.id JOIN users ru ON r.reporter_id=ru.id
+           WHERE r.status='pending' ORDER BY r.created DESC'''
+    ).fetchall()
+    return render_template('review.html', reports=rows)
+
+
+@app.route('/api/review/<int:report_id>/<action>', methods=['POST'])
+@login_required
+def api_review(report_id, action):
+    if not _is_admin(session['user_id']):
+        return jsonify({'error': '无权限'}), 403
+    if action not in ('approve', 'reject'):
+        return jsonify({'error': '无效操作'}), 400
+    db = get_db()
+    report = db.execute('SELECT * FROM reports WHERE id=? AND status=?', (report_id, 'pending')).fetchone()
+    if not report:
+        return jsonify({'error': '举报不存在或已处理'}), 404
+    now = datetime.now().isoformat()
+    if action == 'approve':
+        # 举报不成立：恢复作品，举报人 -1（滥用举报惩罚）
+        db.execute("UPDATE reports SET status='dismissed',reviewed=? WHERE id=?", (now, report_id))
+        db.execute("UPDATE pages SET review_status='approved' WHERE id=?", (report['page_id'],))
+        db.execute('UPDATE users SET trust_points=trust_points-1 WHERE id=?', (report['reporter_id'],))
+        msg = '已驳回举报，作品恢复'
+    else:
+        # 举报成立：作品保持 rejected（对外 404），举报人 +1
+        db.execute("UPDATE reports SET status='upheld',reviewed=? WHERE id=?", (now, report_id))
+        db.execute("UPDATE pages SET review_status='rejected' WHERE id=?", (report['page_id'],))
+        db.execute('UPDATE users SET trust_points=trust_points+1 WHERE id=?', (report['reporter_id'],))
+        msg = '已确认违规，作品下架'
+    db.commit()
+    points = db.execute('SELECT trust_points FROM users WHERE id=?', (report['reporter_id'],)).fetchone()['trust_points']
+    return jsonify({'success': True, 'message': msg, 'trust_points': points,
+                    'badges': _badges(report['reporter_id'])})
+
 
 # ── Public share: /<handle>/<slug> ──────────────────────────────────────────
 # 放在所有静态路由之后：Flask 静态路由优先，两段动态路径不会吃掉 /login 等。

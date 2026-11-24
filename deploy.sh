@@ -44,10 +44,11 @@ if [ "$DRY_RUN" = "--dry-run" ]; then
   exit 0
 fi
 
-echo "==> [2/5] 备份线上代码（app.py + templates + static）"
+echo "==> [2/5] 备份线上代码（py + templates + static + 词库）"
 $SSH "cd '$REMOTE_DIR' && mkdir -p .deploy-backup && \
+  EXTRA=''; for f in moderation.py rescan.py sensitive_words.txt; do [ -e \"\$f\" ] && EXTRA=\"\$EXTRA \$f\"; done; \
   tar czf \".deploy-backup/code-\$(date +%Y%m%d-%H%M%S).tar.gz\" \
-  app.py templates static 2>/dev/null && \
+  app.py templates static \$EXTRA && \
   echo '备份已存 .deploy-backup/'"
 
 echo "==> [3/5] 同步代码到服务器"
@@ -56,8 +57,8 @@ rsync -avz -e "ssh -p $PORT" "${EXCLUDES[@]}" \
 
 echo "==> [4/5] 修正属主 + 语法检查 + 重启"
 $SSH "cd '$REMOTE_DIR' && \
-  chown www:www app.py templates/*.html && \
-  ./venv/bin/python -c \"import ast; ast.parse(open('app.py', encoding='utf-8').read()); print('  app.py 语法 OK')\" && \
+  chown www:www app.py moderation.py rescan.py sensitive_words.txt templates/*.html && \
+  ./venv/bin/python -c \"import ast; ast.parse(open('app.py', encoding='utf-8').read()); ast.parse(open('moderation.py', encoding='utf-8').read()); print('  语法 OK')\" && \
   systemctl restart gallery && sleep 2 && \
   echo \"  service: \$(systemctl is-active gallery)\""
 

@@ -150,13 +150,14 @@
     <a href="{{ url_for('new_page') }}" class="btn-primary">+ 新建</a>
     <a href="{{ url_for('index') }}">首页</a>
     <a href="{{ url_for('settings') }}">设置</a>
+    {% if is_admin %}<a href="{{ url_for('admin_review') }}">复审</a>{% endif %}
     <a href="{{ url_for('logout') }}">退出</a>
   </div>
 </nav>
 
 <div class="container">
   <div class="page-header">
-    <h1>我的作品</h1>
+    <h1>我的作品{% if badges %} <span style="font-size:.8rem;font-weight:normal;color:#5b6af0;">（{{ badges | join(' · ') }}）</span>{% endif %}</h1>
     <a href="{{ url_for('new_page') }}" class="btn-add">+ 新建页面</a>
   </div>
 
@@ -171,6 +172,9 @@
         <a class="card-title" href="{{ url_for('preview', slug=page.slug) }}">{{ page.title }}</a>
         <div class="card-meta">
           <span>{{ '公开' if page.is_public else '私密' }}</span>
+          {% if page.review_status != 'approved' %}
+          <span style="color:#a8071a;">{{ '复审中' if page.review_status == 'pending_review' else '已下架' }}</span>
+          {% endif %}
           <div class="card-actions">
             <a href="{{ url_for('edit_page', page_id=page.id) }}">编辑</a>
             <a href="{{ url_for('preview', slug=page.slug) }}">预览</a>
