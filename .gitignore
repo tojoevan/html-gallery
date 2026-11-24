@@ -1,6 +1,7 @@
 # Local deployment config (may contain server IP / SSH port)
 .deploy.env
 设计文档-复用价值分析.md
+设计方案-用户增长与限时策略.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

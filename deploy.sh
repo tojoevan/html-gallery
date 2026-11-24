@@ -26,6 +26,7 @@ cd "$LOCAL_DIR"
 
 # 只同步代码与文档，绝不覆盖生产资产
 EXCLUDES=(
+  --exclude 'venv/' --exclude 'instance/'
   --exclude '.env' --exclude '.deploy.env'
   --exclude 'gallery.log' --exclude '.deploy-backup/'
   --exclude '__pycache__/' --exclude '*.pyc' --exclude '.git/'

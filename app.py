@@ -95,6 +95,11 @@ def migrate_db():
             db.execute('UPDATE users SET handle=? WHERE id=?', (handle, row['id']))
         db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_handle ON users(handle)')
 
+        # 管理员标记：项目所有者不受作品有效期限制（供限时功能读取）
+        if 'is_admin' not in cols:
+            db.execute('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0')
+        db.execute("UPDATE users SET is_admin=1 WHERE username='tojoevan'")
+
         # pages：仅当 slug 仍是全局唯一时重建（老结构）
         page_sql = db.execute("SELECT sql FROM sqlite_master WHERE name='pages'").fetchone()[0]
         if re.search(r'\bslug\s+TEXT\s+UNIQUE', page_sql):
