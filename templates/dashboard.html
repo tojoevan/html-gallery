@@ -162,9 +162,20 @@
   </div>
 
   {% if is_guest %}
-  <div style="background:#fff7e6;border:1px solid #ffd591;color:#ad4e00;padding:12px 16px;border-radius:8px;margin-bottom:18px;font-size:.92rem;">
-    当前为临时身份，作品分享链接 <strong>3 天后失效</strong>（作品不会删除，可续期）。<a href="{{ url_for('register') }}" style="color:#ad4e00;font-weight:bold;">注册即可永久保存 + 自定义链接</a> →
-  </div>
+    {% if trial %}
+    <div style="background:#f0f5ff;border:1px solid #adc6ff;color:#1d39c4;padding:18px 20px;border-radius:10px;margin-bottom:18px;">
+      <div style="font-size:1.05rem;font-weight:bold;margin-bottom:6px;">🎉 作品已发布！注册后即可永久保存</div>
+      <div style="font-size:.9rem;line-height:1.8;margin-bottom:12px;">
+        现在注册，享受 <strong>永久链接</strong> + <strong>自定义专属地址</strong> + <strong>评论互动</strong>。<br>
+        当前临时作品的分享链接 3 天后失效（作品不会删除，可续期）；注册后本作品自动转为永久。
+      </div>
+      <a href="{{ url_for('register', from='trial') }}" style="display:inline-block;background:#5b6af0;color:#fff;padding:9px 20px;border-radius:7px;text-decoration:none;font-weight:bold;">免费注册，永久保存 →</a>
+    </div>
+    {% else %}
+    <div style="background:#fff7e6;border:1px solid #ffd591;color:#ad4e00;padding:12px 16px;border-radius:8px;margin-bottom:18px;font-size:.92rem;">
+      当前为临时身份，作品分享链接 <strong>3 天后失效</strong>（作品不会删除，可续期）。<a href="{{ url_for('register', from='trial') }}" style="color:#ad4e00;font-weight:bold;">注册即可永久保存 + 自定义链接</a> →
+    </div>
+    {% endif %}
   {% endif %}
 
   {% if pages %}

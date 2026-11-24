@@ -45,7 +45,8 @@ def init_db():
                 handle   TEXT,
                 is_admin INTEGER NOT NULL DEFAULT 0,
                 trust_points INTEGER NOT NULL DEFAULT 0,
-                is_guest INTEGER NOT NULL DEFAULT 0
+                is_guest INTEGER NOT NULL DEFAULT 0,
+                show_fission INTEGER NOT NULL DEFAULT 1
             )
         ''')
         
@@ -144,6 +145,10 @@ def migrate_db():
         # 限时：游客标记（注册时原地升级为普通用户）
         if 'is_guest' not in cols:
             db.execute('ALTER TABLE users ADD COLUMN is_guest INTEGER NOT NULL DEFAULT 0')
+
+        # 增长：/view 裂变入口开关（默认显示，作者可关）
+        if 'show_fission' not in cols:
+            db.execute('ALTER TABLE users ADD COLUMN show_fission INTEGER NOT NULL DEFAULT 1')
 
         # reports 表（老库补建）
         db.execute('''
@@ -402,10 +407,17 @@ def logout():
 @login_required
 def settings():
     db = get_db()
-    user = db.execute('SELECT id, username, email, handle, password FROM users WHERE id=?', (session['user_id'],)).fetchone()
+    user = db.execute('SELECT id, username, email, handle, password, show_fission FROM users WHERE id=?', (session['user_id'],)).fetchone()
 
     if request.method == 'POST':
         action = request.form.get('action')
+
+        if action == 'toggle_fission':
+            show = 1 if request.form.get('show_fission') else 0
+            db.execute('UPDATE users SET show_fission=? WHERE id=?', (show, session['user_id']))
+            db.commit()
+            flash('分享页引导条已' + ('开启' if show else '关闭'))
+            return redirect(url_for('settings'))
 
         if action == 'update_handle':
             handle = request.form.get('handle', '').strip().lower()
@@ -489,6 +501,7 @@ def dashboard():
     return render_template('dashboard.html', pages=pages,
                            is_admin=_is_admin(session['user_id']),
                            is_guest=_is_guest(db, session['user_id']),
+                           trial=bool(request.args.get('trial')),
                            badges=_badges(session['user_id']))
 
 
@@ -549,6 +562,9 @@ def new_page():
              expiry, now, now)
         )
         db.commit()
+        # 动作2：游客创建成功后引导注册（高意向转化窗口）；注册用户直接回看板
+        if _is_guest(db, session['user_id']):
+            return redirect(url_for('dashboard', trial=1))
         return redirect(url_for('dashboard'))
     return render_template('editor.html', page=None, mode='new')
 
@@ -652,12 +668,23 @@ def preview(slug):
         current_user_id=session.get('user_id')
     )
 
+def _fission_ctx(db, page):
+    """裂变入口上下文：非作者 + 作者未关闭时显示。"""
+    current = session.get('user_id')
+    is_owner = current == page['user_id']
+    show = False
+    if not is_owner:
+        author = db.execute('SELECT show_fission FROM users WHERE id=?', (page['user_id'],)).fetchone()
+        show = bool(author and author['show_fission'])
+    return {'current_user_id': current, 'show_fission': show}
+
+
 @app.route('/view/<slug>')
 def view(slug):
     """纯净分享视图：只有作品，无顶栏无评论，iframe 独立视口保留作品自身 sticky。"""
     page = _page_or_403(slug)
-    return render_template('view.html', page=page, html_source=page['html_source'],
-                           current_user_id=session.get('user_id'))
+    ctx = _fission_ctx(get_db(), page)
+    return render_template('view.html', page=page, html_source=page['html_source'], **ctx)
 
 # ── API: live preview ─────────────────────────────────────────────────────────
 
@@ -891,8 +918,8 @@ def api_review(report_id, action):
 def share(handle, slug):
     """公开分享链接：按公开标识 + 作品后缀定位，不含登录用户名。"""
     page = _page_or_403(slug, handle=handle)
-    return render_template('view.html', page=page, html_source=page['html_source'],
-                           current_user_id=session.get('user_id'))
+    ctx = _fission_ctx(get_db(), page)
+    return render_template('view.html', page=page, html_source=page['html_source'], **ctx)
 
 if __name__ == '__main__':
     app.run(debug=os.environ.get('FLASK_DEBUG') == '1', port=5050)

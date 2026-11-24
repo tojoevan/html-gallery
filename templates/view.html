@@ -25,10 +25,32 @@
     opacity: .55; transition: opacity .15s;
   }
   .share-back:hover { opacity: 1; }
+  /* 裂变入口：小字淡色贴底，不遮挡作品；作者本人与关闭开关的用户不可见 */
+  .fission-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 9998;
+    display: flex; align-items: center; justify-content: center; gap: .6rem;
+    padding: .5rem .8rem; background: rgba(255,255,255,.92);
+    border-top: 1px solid #eef0f4; backdrop-filter: blur(6px);
+    font: 400 .78rem/1.4 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    color: #6b7280;
+  }
+  .fission-bar a { color: #5b6af0; text-decoration: none; font-weight: 500; }
+  .fission-bar a:hover { text-decoration: underline; }
+  @media (max-width: 600px) {
+    .fission-bar { font-size: .72rem; gap: .4rem; padding: .45rem .6rem; flex-wrap: wrap; }
+    /* 给底部引导条留出空间，避免遮住作品末尾内容 */
+    .share-frame { height: calc(100vh - 42px); }
+  }
 </style>
 </head>
 <body>
   <iframe class="share-frame" srcdoc="{{ html_source | e }}" sandbox="allow-scripts"></iframe>
+  {% if show_fission %}
+  <div class="fission-bar">
+    <span>用 AI 生成你的网页 → 粘贴到这里，免注册即可发布</span>
+    <a href="/new?from=view">我也要做 →</a>
+  </div>
+  {% endif %}
   {% if current_user_id == page.user_id %}
     <a class="share-back" href="{{ url_for('preview', slug=page.slug) }}" title="返回作品管理页">← 管理</a>
   {% endif %}

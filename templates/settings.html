@@ -102,6 +102,21 @@
   </div>
 
   <div class="card">
+    <h2>分享页设置</h2>
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem;">
+      你的纯净分享页（<code>/handle/作品</code>）底部会显示一条轻量引导，邀请访客也来发布网页。作者本人浏览时不会看到。
+    </p>
+    <form method="post">
+      <input type="hidden" name="action" value="toggle_fission">
+      <label style="display:inline-flex;align-items:center;gap:.5rem;cursor:pointer;">
+        <input type="checkbox" name="show_fission" value="1" {% if user.show_fission %}checked{% endif %}>
+        显示「我也要做」引导条（默认开启）
+      </label>
+      <div style="margin-top:.8rem;"><button type="submit" class="btn btn-primary">保存设置</button></div>
+    </form>
+  </div>
+
+  <div class="card">
     <h2>个人信息</h2>
     <form method="post">
       <input type="hidden" name="action" value="update_email">
