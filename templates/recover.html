@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>用找回码恢复作品 - HTML Gallery</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<meta name="robots" content="noindex">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f8f9fb; --surface: #fff; --border: #e8eaed; --text: #1a1a2e;
+    --muted: #8a8fa8; --accent: #5b6af0; --radius: 12px;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem;
+  }
+  .auth-card {
+    background: var(--surface); width: 100%; max-width: 400px;
+    border-radius: var(--radius); box-shadow: 0 4px 24px rgba(0,0,0,.08); padding: 2.5rem 2rem;
+    min-width: 0;
+  }
+  @media (max-width: 420px) { .auth-card { padding: 2rem 1.2rem; } }
+  .auth-header { text-align: center; margin-bottom: 1.6rem; }
+  .auth-header h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: .5rem; }
+  .auth-header p { font-size: .85rem; color: var(--muted); line-height: 1.7; }
+  .form-group { margin-bottom: 1.1rem; }
+  .form-group label { display: block; font-size: .85rem; font-weight: 500; margin-bottom: .4rem; }
+  .form-group input {
+    width: 100%; padding: .7rem .9rem; border: 1.5px solid var(--border);
+    border-radius: 8px; font-size: 1rem; letter-spacing: .06em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .form-group input:focus { outline: none; border-color: var(--accent); }
+  .btn-submit {
+    width: 100%; padding: .75rem; background: var(--accent); color: #fff;
+    border: none; border-radius: 8px; font-size: .95rem; font-weight: 500; cursor: pointer;
+  }
+  .btn-submit:hover { opacity: .88; }
+  .error-msg {
+    background: #fff5f5; border: 1px solid #feb2b2; color: #c53030;
+    padding: .7rem .9rem; border-radius: 8px; font-size: .85rem; margin-bottom: 1.1rem;
+  }
+  .note { font-size: .78rem; color: var(--muted); line-height: 1.7; margin-top: .5rem; }
+  .auth-footer { text-align: center; margin-top: 1.4rem; font-size: .85rem; color: var(--muted); }
+  .auth-footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<div class="auth-card">
+  <div class="auth-header">
+    <h1>用找回码恢复作品</h1>
+    <p>换设备或清了浏览器 Cookie 后，<br>用发布时保存的找回码取回临时作品。</p>
+  </div>
+
+  {% if error %}
+    <div class="error-msg">{{ error }}</div>
+  {% endif %}
+
+  <form method="post">
+    <div class="form-group">
+      <label for="code">找回码</label>
+      <input type="text" id="code" name="code" required autocomplete="off" spellcheck="false"
+             placeholder="如 ABCD-EFGH-JKLM-NPQR" maxlength="24">
+    </div>
+    <button type="submit" class="btn-submit">恢复我的作品</button>
+  </form>
+
+  <div class="note">
+    16 位字符，大小写和分隔符都不敏感。找回码只对应临时作品；注册账号请直接登录。
+  </div>
+
+  <div class="auth-footer">
+    <a href="{{ url_for('login') }}">返回登录</a> · <a href="{{ url_for('index') }}">回到首页</a>
+  </div>
+</div>
+
+</body>
+</html>

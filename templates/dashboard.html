@@ -178,6 +178,13 @@
   {% endif %}
   {% endwith %}
 
+  {% if recovered %}
+  <div style="background:#f6ffed;border:1px solid #b7eb8f;color:#237804;padding:12px 16px;border-radius:8px;margin-bottom:18px;font-size:.92rem;line-height:1.8;">
+    ✅ 已用找回码恢复临时身份，名下有 {{ pages|length }} 个作品。
+    {% if switched %}<br>当前浏览器原来的临时身份没有合并，那些作品仍在库里，可用它自己的找回码找回。{% endif %}
+  </div>
+  {% endif %}
+
   {% if is_guest %}
     {% if trial %}
     <div style="background:#f0f5ff;border:1px solid #adc6ff;color:#1d39c4;padding:18px 20px;border-radius:10px;margin-bottom:18px;">
@@ -185,15 +192,28 @@
       <div style="font-size:.9rem;line-height:1.8;margin-bottom:12px;">
         现在注册，享受 <strong>永久链接</strong> + <strong>自定义专属地址</strong> + <strong>评论互动</strong>。<br>
         当前临时作品 3 天后失效（不会删除，可续期）；注册后自动转永久并绑定账号。<br>
-        <span style="color:#a8071a;">私密作品仅当前浏览器可见，清除 Cookie 或换设备将无法找回。</span>
+        <span style="color:#a8071a;">临时身份只认当前浏览器：换设备或清 Cookie 后会「找不到」这些作品。</span>发布后建议顺手生成一个找回码（见下方）。
       </div>
       <a href="{{ url_for('register', from='trial') }}" style="display:inline-block;background:#5b6af0;color:#fff;padding:9px 20px;border-radius:7px;text-decoration:none;font-weight:bold;">免费注册，永久保存 →</a>
     </div>
     {% else %}
     <div style="background:#fff7e6;border:1px solid #ffd591;color:#ad4e00;padding:12px 16px;border-radius:8px;margin-bottom:18px;font-size:.92rem;">
-      当前为临时身份，作品分享链接 <strong>3 天后失效</strong>（不会删除，可续期）；私密作品仅当前浏览器可见，清除 Cookie 后无法找回。<a href="{{ url_for('register', from='trial') }}" style="color:#ad4e00;font-weight:bold;">注册即可永久保存 + 自定义链接</a> →
+      当前为临时身份，作品分享链接 <strong>3 天后失效</strong>（不会删除，可续期）；临时身份只认当前浏览器，清除 Cookie 后作品会「找不到」（可用找回码取回）。<a href="{{ url_for('register', from='trial') }}" style="color:#ad4e00;font-weight:bold;">注册即可永久保存 + 自定义链接</a> →
     </div>
     {% endif %}
+
+    <div style="background:#fafbfc;border:1px solid #eef0f4;color:#6b7280;padding:10px 14px;border-radius:8px;margin-bottom:18px;font-size:.85rem;line-height:1.9;">
+      {% if has_recovery %}
+      🔑 已生成找回码（库里只存摘要，无法再显示）。
+      {% else %}
+      🔑 换设备或清 Cookie 后，这些临时作品就找不到了。生成一个找回码保存起来，随时能取回。
+      {% endif %}
+      <form method="post" action="{{ url_for('recovery_code') }}" style="display:inline;margin-left:6px;">
+        <button type="submit" style="background:none;border:none;padding:0;color:#5b6af0;font-size:inherit;font-weight:500;cursor:pointer;text-decoration:underline;">
+          {{ '重新生成（旧码作废）' if has_recovery else '生成找回码' }}
+        </button>
+      </form>
+    </div>
   {% endif %}
 
   {% if expiring %}

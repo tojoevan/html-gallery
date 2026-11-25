@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, abort, flash
 from flask.wrappers import Request as FlaskRequest
 from werkzeug.security import generate_password_hash, check_password_hash
-import sqlite3, os, re, secrets, time
+import sqlite3, os, re, secrets, time, hashlib
 from datetime import datetime, timedelta
 from functools import wraps
 from urllib.parse import urlparse
@@ -155,6 +155,11 @@ def migrate_db():
         if 'show_fission' not in cols:
             db.execute('ALTER TABLE users ADD COLUMN show_fission INTEGER NOT NULL DEFAULT 1')
 
+        # 找回：游客的一次性身份凭据（只存 sha256，明文仅生成时展示一次）
+        if 'recovery_code' not in cols:
+            db.execute('ALTER TABLE users ADD COLUMN recovery_code TEXT')
+        db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_recovery ON users(recovery_code)')
+
         # reports 表（老库补建）
         db.execute('''
             CREATE TABLE IF NOT EXISTS reports (
@@ -280,6 +285,49 @@ def _expiry_for(user_id, db):
     if row and row['is_guest'] and not row['is_admin']:
         return (datetime.now() + timedelta(days=TRIAL_DAYS)).isoformat()
     return None
+
+
+# ── 游客找回码 ────────────────────────────────────────────────────────────────
+# 问题：游客身份只存在 session cookie 里，清 Cookie / 换设备后作品就「没人认领」。
+# 做法：给游客一个 16 位找回码（80 bit，剔除 0O1I 易混字符），**库里只存 sha256**；
+#       明文只在生成/重置那一次展示，之后无法再读出（重新生成会让旧码立即作废）。
+# 边界：只对 is_guest=1 的账号有效；注册原地升级时清空，避免旧码接管正式账号。
+RECOVERY_LEN = 16
+RECOVERY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+RECOVER_MAX_TRIES = 8      # 单 IP 10 分钟内最多尝试次数
+RECOVER_WINDOW = 600
+_recover_hits = {}         # ip -> [尝试时间戳]（单进程内存限流，重启即清）
+
+
+def _recovery_hash(code):
+    """归一化（去分隔符与空格、转大写）后取 sha256；格式不合法返回 None。"""
+    raw = re.sub(r'[^A-Za-z0-9]', '', code or '').upper()
+    if len(raw) != RECOVERY_LEN or any(c not in RECOVERY_ALPHABET for c in raw):
+        return None
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _new_recovery_code(db, user_id):
+    """生成并写入新码，返回带分隔符的明文（形如 ABCD-EFGH-JKLM-NPQR）。"""
+    while True:
+        raw = ''.join(secrets.choice(RECOVERY_ALPHABET) for _ in range(RECOVERY_LEN))
+        digest = hashlib.sha256(raw.encode()).hexdigest()
+        if not db.execute('SELECT 1 FROM users WHERE recovery_code=?', (digest,)).fetchone():
+            break
+    db.execute('UPDATE users SET recovery_code=? WHERE id=?', (digest, user_id))
+    db.commit()
+    return '-'.join(raw[i:i + 4] for i in range(0, RECOVERY_LEN, 4))
+
+
+def _recover_rate_ok(ip):
+    now = time.time()
+    hits = [t for t in _recover_hits.get(ip, []) if now - t < RECOVER_WINDOW]
+    _recover_hits[ip] = hits
+    return len(hits) < RECOVER_MAX_TRIES
+
+
+def _recover_hit(ip):
+    _recover_hits.setdefault(ip, []).append(time.time())
 
 
 # ── 过期策略（2026-11-26 明确决策）─────────────────────────────────────────────
@@ -421,8 +469,8 @@ def register():
                 if upgrade_uid:
                     # 原地升级：保留 user_id 与全部作品，游客作品一并转永久
                     db.execute(
-                        '''UPDATE users SET username=?, email=?, password=?, handle=?, is_guest=0
-                           WHERE id=?''',
+                        '''UPDATE users SET username=?, email=?, password=?, handle=?, is_guest=0,
+                           recovery_code=NULL WHERE id=?''',
                         (username, email, generate_password_hash(password), handle, upgrade_uid)
                     )
                     db.execute('UPDATE pages SET share_expires_at=NULL WHERE user_id=?', (upgrade_uid,))
@@ -569,13 +617,58 @@ def dashboard():
     expiring = [p for p in pages
                 if p['hours_left'] is not None and p['hours_left'] <= EXPIRY_WARN_HOURS]
     expired_count = sum(1 for p in expiring if p['hours_left'] <= 0)
+    me = db.execute('SELECT recovery_code FROM users WHERE id=?', (session['user_id'],)).fetchone()
     return render_template('dashboard.html', pages=pages, expiring=expiring,
                            expired_count=expired_count,
                            expiring_hours=EXPIRY_WARN_HOURS,
                            is_admin=_is_admin(session['user_id']),
                            is_guest=_is_guest(db, session['user_id']),
+                           has_recovery=bool(me and me['recovery_code']),
+                           recovered=bool(request.args.get('recovered')),
+                           switched=bool(request.args.get('switched')),
                            trial=bool(request.args.get('trial')),
                            badges=_badges(session['user_id']))
+
+
+@app.route('/recovery-code', methods=['POST'])
+@identity_required
+def recovery_code():
+    """为当前游客生成/重置找回码；明文只在本页展示一次。"""
+    db = get_db()
+    uid = session['user_id']
+    if not _is_guest(db, uid):
+        return redirect(url_for('dashboard'))
+    return render_template('recovery_code.html', code=_new_recovery_code(db, uid))
+
+
+@app.route('/recover', methods=['GET', 'POST'])
+def recover():
+    """用找回码恢复游客身份（换设备 / 清 Cookie 后）。"""
+    error = None
+    switched = False
+    if request.method == 'POST':
+        ip = request.remote_addr or '-'
+        if not _recover_rate_ok(ip):
+            error = '尝试次数过多，请 10 分钟后再试'
+        else:
+            _recover_hit(ip)
+            digest = _recovery_hash(request.form.get('code', ''))
+            db = get_db()
+            row = db.execute('SELECT id, username, is_guest FROM users WHERE recovery_code=?',
+                             (digest,)).fetchone() if digest else None
+            if not row or not row['is_guest']:
+                error = '找回码无效，或对应的临时身份已被注册升级'
+            else:
+                # 当前浏览器若是另一个游客且名下有作品，切换后那些作品就不再显示，先告知
+                cur = session.get('user_id')
+                if cur and cur != row['id'] and _is_guest(db, cur):
+                    switched = bool(db.execute('SELECT 1 FROM pages WHERE user_id=? LIMIT 1',
+                                               (cur,)).fetchone())
+                session['user_id'] = row['id']
+                session['username'] = row['username']
+                url = url_for('dashboard') + '?recovered=1' + ('&switched=1' if switched else '')
+                return redirect(url)
+    return render_template('recover.html', error=error)
 
 
 def _extend_expiry(user_id, db, page_id):
