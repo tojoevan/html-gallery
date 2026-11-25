@@ -33,7 +33,7 @@
       <div class="actions">
         <button class="uphold" onclick="review({{ r.id }}, 'reject')">确认违规 · 下架</button>
         <button class="dismiss" onclick="review({{ r.id }}, 'approve')">驳回举报 · 恢复</button>
-        <a href="{{ url_for('preview', slug=r.slug) }}" target="_blank" style="padding:.45rem .5rem;">查看作品 ↗</a>
+        <a href="{{ page_url(r) }}" target="_blank" style="padding:.45rem .5rem;">查看作品 ↗</a>
       </div>
     </div>
     {% endfor %}

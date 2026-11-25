@@ -21,8 +21,6 @@
 <meta name="twitter:description" content="{{ meta_desc | truncate(110, true, '…') }}">
 <meta name="twitter:image" content="{{ site_url }}/static/og-default.png">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -35,7 +33,7 @@
     --accent-light: #eef0ff;
   }
   body {
-    font-family: 'Inter', -apple-system, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
@@ -187,7 +185,7 @@
     <span class="nav-title" title="{{ meta_desc | truncate(110, true, '…') }}">{{ page.title }}</span>
     {% if visibility == 'private' %}<span class="nav-private">私密</span>
     {% elif visibility == 'unlisted' %}<span class="nav-unlisted">仅持链接可见</span>{% endif %}
-    <span class="nav-author">by {{ page.username }}</span>
+    <span class="nav-author">by {{ page.handle or page.username }}</span>
   </div>
   <div class="nav-links">
     <button class="like-btn" id="likeBtn" onclick="toggleLike()" title="点赞">

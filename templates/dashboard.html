@@ -5,8 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>我的作品 - HTML Gallery</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -21,7 +19,7 @@
     --radius: 12px;
   }
   body {
-    font-family: 'Inter', -apple-system, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
@@ -113,8 +111,13 @@
     background: #fff5f5; color: var(--danger);
   }
 
-  .empty { text-align: center; padding: 4rem 1rem; color: var(--muted); }
-  .empty-icon { font-size: 3rem; opacity: .4; margin-bottom: 1rem; }
+  .flash-box {
+    background: #f0f5ff; border: 1px solid #adc6ff; color: #1d39c4;
+    padding: .75rem 1rem; border-radius: 8px; margin-bottom: 1rem;
+    font-size: .9rem; line-height: 1.7;
+  }
+
+  .empty { text-align: center; padding: 4rem 1rem; color: var(--muted); }  .empty-icon { font-size: 3rem; opacity: .4; margin-bottom: 1rem; }
 
   .btn-add {
     display: inline-flex; align-items: center; gap: .4rem;
@@ -167,6 +170,14 @@
     <a href="{{ url_for('new_page') }}" class="btn-add">+ 新建页面</a>
   </div>
 
+  {% with messages = get_flashed_messages() %}
+  {% if messages %}
+  <div class="flash-box">
+    {% for m in messages %}<div>{{ m }}</div>{% endfor %}
+  </div>
+  {% endif %}
+  {% endwith %}
+
   {% if is_guest %}
     {% if trial %}
     <div style="background:#f0f5ff;border:1px solid #adc6ff;color:#1d39c4;padding:18px 20px;border-radius:10px;margin-bottom:18px;">
@@ -212,7 +223,7 @@
   <div class="grid">
     {% for page in pages %}
     <div class="card">
-      <a class="card-thumb" href="{{ url_for('preview', slug=page.slug) }}" title="查看 {{ page.title }}">
+      <a class="card-thumb" href="{{ page_url(page) }}" title="查看 {{ page.title }}">
         {# 超过 200KB 不嵌 srcdoc：图文作品内联图片后单页可达 2MB #}
         {% if page.html_source|length <= 200000 %}
         <iframe srcdoc="{{ page.html_source | e }}" sandbox="allow-scripts" loading="lazy"></iframe>
@@ -221,7 +232,7 @@
         {% endif %}
       </a>
       <div class="card-body">
-        <a class="card-title" href="{{ url_for('preview', slug=page.slug) }}">{{ page.title }}</a>
+        <a class="card-title" href="{{ page_url(page) }}">{{ page.title }}</a>
         <div class="card-meta">
           <span>{{ {'public': '公开', 'unlisted': '仅链接', 'private': '私密'}.get(page.visibility, '公开' if page.is_public else '私密') }}</span>
           {% if page.review_status != 'approved' %}
@@ -231,18 +242,26 @@
           <span style="color:#a8071a;font-weight:500;">
             {% if page.hours_left <= 0 %}已到期{% else %}剩余 {{ page.hours_left }} 小时{% endif %}
           </span>
+          {% if page.renew_left == 0 %}
+          <a href="{{ url_for('register', from='renew') }}" style="color:#a8071a;font-weight:500;">续期已用完 · 注册永久保留</a>
+          {% else %}
           <form method="post" action="{{ url_for('renew_page', page_id=page.id) }}" style="display:inline;">
-            <button type="submit" style="background:none;border:none;color:#a8071a;cursor:pointer;padding:0;font-size:inherit;font-weight:500;">立即续期</button>
+            <button type="submit" title="免登录还可续期 {{ page.renew_left }} 次" style="background:none;border:none;color:#a8071a;cursor:pointer;padding:0;font-size:inherit;font-weight:500;">立即续期</button>
           </form>
+          {% endif %}
           {% elif page.days_left is not none %}
           <span style="color:#ad4e00;">剩余 {{ page.days_left }} 天</span>
+          {% if page.renew_left == 0 %}
+          <span style="color:#a8071a;">续期已用完</span>
+          {% else %}
           <form method="post" action="{{ url_for('renew_page', page_id=page.id) }}" style="display:inline;">
-            <button type="submit" style="background:none;border:none;color:#5b6af0;cursor:pointer;padding:0;font-size:inherit;">续期</button>
+            <button type="submit" title="免登录还可续期 {{ page.renew_left }} 次" style="background:none;border:none;color:#5b6af0;cursor:pointer;padding:0;font-size:inherit;">续期</button>
           </form>
+          {% endif %}
           {% endif %}
           <div class="card-actions">
             <a href="{{ url_for('edit_page', page_id=page.id) }}">编辑</a>
-            <a href="{{ url_for('preview', slug=page.slug) }}">预览</a>
+            <a href="{{ page_url(page) }}">预览</a>
             <form method="post" action="{{ url_for('delete_page', page_id=page.id) }}" onsubmit="return confirm('确认删除？')">
               <button type="submit" class="danger">删除</button>
             </form>

@@ -253,33 +253,60 @@ _REPLACE_PLACEHOLDER_RE = re.compile(r'\[([^\]]*)\]\(@replace=([^)\s]+)\)')
 
 # 图片内联预算：发布表单上限 3MB，base64 膨胀 4/3，留出正文与转义余量
 INLINE_IMAGE_MAX = 900 * 1024
+INLINE_FILE_MAX = 500 * 1024
 INLINE_TOTAL_MAX = 1800 * 1024
 INLINE_IMAGE_TIMEOUT = 10
+# 文本类附件可内联成可下载的 data URI；pdf/zip 体积不可控，仍只保留标签
+INLINE_FILE_EXT = ('.html', '.htm', '.txt', '.md', '.json', '.csv', '.css', '.js')
+
+_FILE_MIME = (('.html', 'text/html'), ('.htm', 'text/html'), ('.txt', 'text/plain'),
+              ('.md', 'text/markdown'), ('.json', 'application/json'),
+              ('.csv', 'text/csv'), ('.css', 'text/css'), ('.js', 'text/javascript'))
+
+
+def _asset_mime(item):
+    """按附件文件名推断下载用的 MIME；不可内联的类型返回 None。"""
+    name = (item.get('title') or '').lower()
+    for suffix, mime in _FILE_MIME:
+        if name.endswith(suffix):
+            return mime
+    return None
 
 
 def _inline_yuanbao_images(medias):
-    """下载图片附件并转成 data URI，让作品自包含。
+    """下载图片与文本类附件并转成 data URI，让作品自包含。
 
     元宝的图片/附件直链带 COS 签名，过期后作品里的图会全部失效，所以在导入时落库。
-    受发布表单 3MB 上限约束（base64 膨胀 4/3）：单图 900KB、合计 1.8MB 原图。
-    超限或下载失败的图片跳过，渲染时降级为「🖼 图片」标签，不影响其余内容。
+    受发布表单 3MB 上限约束（base64 膨胀 4/3）：单图 900KB、单文件 500KB、合计 1.8MB。
+    超限或下载失败的附件跳过，渲染时降级为标签/图片占位，不影响其余内容。
     """
     inline = {}
     total = 0
     for item in medias:
-        if item.get('kind') != 'image' or not item.get('url') or not item.get('id'):
+        if not item.get('url') or not item.get('id'):
+            continue
+        kind = item.get('kind')
+        declared = None
+        if kind == 'image':
+            limit, accept = INLINE_IMAGE_MAX, 'image/*'
+        elif kind == 'file':
+            declared = _asset_mime(item)
+            if not declared:
+                continue
+            limit, accept = INLINE_FILE_MAX, '*/*'
+        else:
             continue
         if total >= INLINE_TOTAL_MAX:
             break
-        budget = min(INLINE_IMAGE_MAX, INLINE_TOTAL_MAX - total)
+        budget = min(limit, INLINE_TOTAL_MAX - total)
         try:
             # 直链来自页面 JSON，仍属不可信来源，必须走 SSRF 校验
             assert_public_url(item['url'])
             req = urllib.request.Request(
-                item['url'], headers={'User-Agent': UA, 'Accept': 'image/*'})
+                item['url'], headers={'User-Agent': UA, 'Accept': accept})
             with _build_opener().open(req, timeout=INLINE_IMAGE_TIMEOUT) as resp:
                 ctype = (resp.headers.get('Content-Type') or '').split(';')[0].strip().lower()
-                if not ctype.startswith('image/'):
+                if kind == 'image' and not ctype.startswith('image/'):
                     continue
                 raw = resp.read(budget + 1)
         except LinkImportError:
@@ -290,8 +317,9 @@ def _inline_yuanbao_images(medias):
         if not raw or len(raw) > budget:
             continue
         total += len(raw)
+        mime = declared or ctype or ('image/png' if kind == 'image' else 'application/octet-stream')
         inline[item['id']] = 'data:%s;base64,%s' % (
-            ctype, base64.b64encode(raw).decode('ascii'))
+            mime, base64.b64encode(raw).decode('ascii'))
     return inline
 
 
@@ -313,7 +341,7 @@ def _replace_media_placeholders(text, media_map, attachments, inline_map=None):
             return '\x02ATT%d\x02' % (len(attachments) - 1)
         if not name:
             return m.group(1).strip()
-        attachments.append({'kind': 'file', 'label': '📎 ' + name})
+        attachments.append({'kind': 'file', 'label': name, 'src': inline_map.get(media_id)})
         return '\x02ATT%d\x02' % (len(attachments) - 1)
     cleaned = _REPLACE_PLACEHOLDER_RE.sub(_sub, text)
     # 兜底：任何残留的 @replace= 占位编码都剔除
@@ -333,6 +361,18 @@ def _restore_attachments(html, attachments):
                            + '" loading="lazy">')
             else:
                 html = html.replace(token, '<span class="attachment">🖼 ' + alt + '</span>')
+            continue
+        if isinstance(item, dict) and item.get('kind') == 'file':
+            name = item.get('label') or '附件'
+            src = item.get('src')
+            if src:
+                html = html.replace(
+                    token, '<a class="attachment" href="' + src + '" download="'
+                           + escape(name, quote=True) + '" title="点击下载">📎 '
+                           + escape(name) + '</a>')
+            else:
+                html = html.replace(token, '<span class="attachment">📎 ' + escape(name)
+                                    + '</span>')
             continue
         label = item if isinstance(item, str) else (item.get('label') or '')
         html = html.replace(token, '<span class="attachment">' + escape(label) + '</span>')
@@ -563,6 +603,22 @@ border:1px solid #eef0f4;border-radius:12px}
 .attachment{display:inline-flex;align-items:center;gap:4px;padding:3px 11px;
 font-size:13px;font-weight:500;color:#3b4fd8;background:#f4f6ff;
 border:1px solid #dfe5ff;border-radius:999px}
+a.attachment{text-decoration:none;cursor:pointer}
+a.attachment:hover{background:#e9eeff;border-color:#c9d3ff}
+.think{margin:14px 0 4px;border:1px solid #e8ebf2;border-radius:10px;
+background:#fbfcfe;overflow:hidden}
+.think>summary{display:flex;align-items:center;gap:8px;padding:9px 13px;cursor:pointer;
+font-size:13px;color:#66708a;list-style:none;user-select:none}
+.think>summary::-webkit-details-marker{display:none}
+.think>summary::before{content:'▸';font-size:11px;color:#9aa3b8;
+transition:transform .15s;display:inline-block}
+.think[open]>summary::before{transform:rotate(90deg)}
+.think .ti{font-weight:600;color:#4a5470}
+.think .tn{font-size:12px;color:#9aa3b8}
+.think-body{padding:2px 15px 12px;border-top:1px solid #eef0f6;color:#5b6478;
+font-size:13.5px;line-height:1.75}
+.think-body p{margin:8px 0}
+.think-cut{color:#9aa3b8;font-style:italic}
 li.task{display:flex;flex-wrap:wrap;gap:9px;align-items:flex-start;
 margin-left:-20px;list-style:none}
 li.task .cb{display:grid;place-items:center;flex:0 0 16px;height:16px;margin-top:5px;
@@ -581,6 +637,36 @@ body{padding:0;background:#fff}
 pre{padding:14px 16px;border-radius:10px}
 }
 '''
+
+
+THINK_MAX_CHARS = 4000  # 思考过程折叠展示，超长截断以控制作品体积
+
+
+def _collect_think(block):
+    """deepSearchAgent 块里的思考记录：contents[].text 顺序拼接。"""
+    chunks = []
+    for part in block.get('contents') or []:
+        if isinstance(part, dict):
+            text = (part.get('text') or '').strip()
+            if text:
+                chunks.append(text)
+    return '\n'.join(chunks)
+
+
+def _think_html(text):
+    """折叠展示思考过程：默认收起，避免抢正文，需要时可展开。"""
+    from html import escape
+    text = (text or '').strip()
+    if not text:
+        return ''
+    total = len(text)
+    clipped = text if total <= THINK_MAX_CHARS else text[:THINK_MAX_CHARS]
+    body = ''.join('<p>' + escape(line) + '</p>' for line in clipped.split('\n') if line.strip())
+    if total > THINK_MAX_CHARS:
+        body += '<p class="think-cut">…（思考记录较长，此处只保留前 %d 字）</p>' % THINK_MAX_CHARS
+    return ('<details class="think"><summary><span class="ti">思考过程</span>'
+            '<span class="tn">%d 字</span></summary>'
+            '<div class="think-body">%s</div></details>' % (total, body))
 
 
 def _yuanbao_conversation_html(chat, title, source_url, inline_map=None):
@@ -608,6 +694,7 @@ def _yuanbao_conversation_html(chat, title, source_url, inline_map=None):
     for conv in convs:
         is_me = str(conv.get('speaker')).lower() in ('0', 'human', 'user')
         texts = []
+        thinks = []
         attachments = []
         for speech in conv.get('speechesV2') or []:
             # 该条发言内的附件映射：replaces[].id → 媒体信息（标题/类型）
@@ -624,6 +711,12 @@ def _yuanbao_conversation_html(chat, title, source_url, inline_map=None):
             for block in speech.get('content') or []:
                 if not isinstance(block, dict):
                     continue
+                # 思考/工具过程：之前整块丢弃，等于把「抓取不全」的观感留给用户
+                if block.get('type') == 'deepSearchAgent':
+                    think = _collect_think(block)
+                    if think:
+                        thinks.append(think)
+                    continue
                 raw = block.get('msg') or block.get('text')
                 if not raw:
                     continue
@@ -631,14 +724,16 @@ def _yuanbao_conversation_html(chat, title, source_url, inline_map=None):
                                                   inline_map)
                 if raw.strip():
                     texts.append(raw)
-        if not texts:
+        if not texts and not thinks:
             continue
         has_content = True
         body_html = _restore_attachments(_md_to_html('\n\n'.join(texts)), attachments)
         who = ('我的提问' if is_me else '<span class="av">元</span>元宝')
         parts.append(('<section class="msg ' + ('msg-me' if is_me else 'msg-ai') + '">'
                       '<div class="who">' + who + '</div>'
-                      '<div class="txt">' + body_html + '</div></section>'))
+                      + _think_html('\n'.join(thinks))
+                      + ('<div class="txt">' + body_html + '</div>' if texts else '')
+                      + '</section>'))
     parts.append('</main></div></body></html>')
     return ''.join(parts) if has_content else ''
 

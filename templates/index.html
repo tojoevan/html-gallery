@@ -17,8 +17,6 @@
 <meta name="twitter:description" content="粘贴链接或源码，一键发布成可交互网页。">
 <meta name="twitter:image" content="{{ site_url }}/static/og-default.png">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -36,7 +34,7 @@
   }
 
   body {
-    font-family: 'Inter', -apple-system, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
@@ -158,6 +156,12 @@
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 1.25rem;
   }
+  .site-foot {
+    grid-column: 1 / -1;
+    text-align: center; font-size: .82rem; color: var(--muted);
+    margin-top: 1.5rem;
+  }
+  .site-foot a { color: var(--accent); text-decoration: none; }
 
   /* ── Card ── */
   .card {
@@ -336,7 +340,7 @@
   {% if pages %}
     {% for page in pages %}
     <div class="card">
-      <a class="card-thumb" href="{{ url_for('preview', slug=page.slug) }}" title="查看 {{ page.title }}">
+      <a class="card-thumb" href="{{ page_url(page) }}" title="查看 {{ page.title }}">
         {# 超过 200KB 不嵌 srcdoc：图文作品内联图片后单页可达 2MB，会把首页拖到数 MB #}
         {% if page.html_source and page.html_source|length <= 200000 %}
         <iframe srcdoc="{{ page.html_source | e }}" sandbox="allow-scripts" loading="lazy"></iframe>
@@ -349,13 +353,13 @@
         {% endif %}
       </a>
       <div class="card-body">
-        <a class="card-title" href="{{ url_for('preview', slug=page.slug) }}">{{ page.title }}</a>
+        <a class="card-title" href="{{ page_url(page) }}">{{ page.title }}</a>
         {% if page.description %}
         <p class="card-desc">{{ page.description }}</p>
         {% endif %}
         <div class="card-meta">
           <span class="card-author">by <strong>{{ page.handle or page.username }}</strong></span>
-          <a class="card-link" href="{{ url_for('preview', slug=page.slug) }}">查看 →</a>
+          <a class="card-link" href="{{ page_url(page) }}">查看 →</a>
         </div>
       </div>
     </div>
@@ -366,6 +370,10 @@
       <p>还没有作品，<a href="{{ url_for('register') }}" style="color:var(--accent)">注册</a>后发布第一个吧！</p>
     </div>
   {% endif %}
+  <p class="site-foot">
+    免注册 3 天有效 · 可自助续期 · 作品可选公开 / 仅链接 / 私密 ·
+    <a href="{{ url_for('privacy') }}">隐私与数据</a>
+  </p>
 </div>
 
 <script>

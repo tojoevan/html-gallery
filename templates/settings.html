@@ -4,12 +4,10 @@
   <meta charset=utf-8>
   <title>用户设置 - HTMLGallery</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
   <style>
     :root { --bg: #f8f9fa; --surface: #fff; --text: #1a1a2e; --border: #e8eaed; --accent: #5b6af0; --muted: #8a8fa8; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; }
 
     nav { position: sticky; top: 0; z-index: 100; background: rgba(255,255,255,.85); backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,.04); padding: 0 2rem; height: 60px; display: flex; align-items: center; justify-content: space-between; }
     .nav-brand {
@@ -54,6 +52,13 @@
     .form-group input:focus { outline: none; border-color: var(--accent); }
     
     .btn { padding: .6rem 1.2rem; border-radius: 8px; font-size: .95rem; font-weight: 500; cursor: pointer; border: 1.5px solid var(--border); background: var(--surface); text-decoration: none; display: inline-block; }
+    .btn-danger { background: #c0392b; color: #fff; border-color: #c0392b; }
+    .btn-danger:hover { background: #a93226; }
+    .card-danger { border: 1px solid #f3c9c4; }
+    .card-danger h2 { color: #a93226; }
+    .hint { font-size: .87rem; color: var(--muted); line-height: 1.7; margin-bottom: .9rem; }
+    .hint a { color: var(--accent); text-decoration: none; }
+    .card-danger .hint { color: #85534d; }
     .btn-primary { background: var(--accent); color: #fff !important; padding: .4rem 1rem !important; border-radius: 8px; font-weight: 500; line-height: 1.5; }
     .btn-primary:hover { background: #4a5ad4 !important; }
     
@@ -116,6 +121,16 @@
     </form>
   </div>
 
+  {% if is_guest %}
+  <div class="card">
+    <h2>临时身份</h2>
+    <p class="hint">
+      你现在是免登录身份，作品 3 天后失效（可自助续期，最多 6 次）。
+      注册后可永久保存、自定义专属地址，还能参与评论。
+      <a href="{{ url_for('register', from='settings') }}">免费注册 →</a>
+    </p>
+  </div>
+  {% else %}
   <div class="card">
     <h2>个人信息</h2>
     <form method="post">
@@ -135,7 +150,9 @@
       <button type="submit" class="btn btn-primary">保存邮箱</button>
     </form>
   </div>
+  {% endif %}
   
+  {% if not is_guest %}
   <div class="card">
     <h2>修改密码</h2>
     <form method="post">
@@ -153,6 +170,34 @@
         <input type="password" name="confirm_password" required minlength="6">
       </div>
       <button type="submit" class="btn btn-primary">修改密码</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h2>隐私与数据</h2>
+    <p class="hint">存了哪些数据、作品谁能看到、保留多久、怎么删除。<a href="{{ url_for('privacy') }}">查看隐私与数据说明 →</a></p>
+  </div>
+
+  <div class="card card-danger">
+    <h2>删除账号</h2>
+    <p class="hint">
+      会一并删除你的全部作品、点赞、评论与举报，<strong>不可恢复</strong>。
+      {% if is_guest %}你是免登录的临时身份，删除后这个浏览器里的作品会全部消失。{% endif %}
+    </p>
+    <form method="post" action="{{ url_for('delete_account') }}"
+          onsubmit="return confirm('确认删除账号及其全部作品？此操作不可恢复。')">
+      {% if not is_guest %}
+      <div class="form-group">
+        <label>当前密码</label>
+        <input type="password" name="password" required>
+      </div>
+      {% endif %}
+      <div class="form-group">
+        <label>输入 <code>DELETE</code> 确认</label>
+        <input type="text" name="confirm" placeholder="DELETE" autocomplete="off" required>
+      </div>
+      <button type="submit" class="btn btn-danger">删除我的账号</button>
     </form>
   </div>
 </div>

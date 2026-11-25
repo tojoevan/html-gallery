@@ -84,7 +84,7 @@
   </div>
   {% endif %}
   {% if current_user_id == page.user_id %}
-    <a class="share-back" href="{{ url_for('preview', slug=page.slug) }}" title="返回作品管理页">← 管理</a>
+    <a class="share-back" href="{{ page_url(page) }}" title="返回作品管理页">← 管理</a>
   {% endif %}
 </body>
 </html>

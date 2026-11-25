@@ -241,6 +241,84 @@ check('仅链接作品 noindex', 'name="robots" content="noindex' in
 check('公开作品不加 noindex', 'name="robots"' not in
       app_module.app.test_client().get('/p/vis-public').get_data(as_text=True))
 
+# ── 11. 跨用户同名作品：裸链接不再串页 ─────────────────────────────────────
+one_owner = app_module.app.test_client()
+one_owner.post('/new', data={'title': '同名作品', 'html_source': '<b>ONE</b>', 'visibility': 'public'})
+two_owner = app_module.app.test_client()
+two_owner.post('/new', data={'title': '同名作品', 'html_source': '<b>TWO</b>', 'visibility': 'public'})
+
+_c = sqlite3.connect(DB)
+_c.row_factory = sqlite3.Row
+_same = _c.execute('''SELECT p.id, u.handle FROM pages p JOIN users u ON u.id=p.user_id
+                      WHERE p.slug='同名作品' ORDER BY p.id''').fetchall()
+_c.close()
+check('同名 slug 跨用户各自独立存在', len(_same) == 2, f'{len(_same)}')
+h_one, h_two = _same[0]['handle'], _same[1]['handle']
+
+stranger = app_module.app.test_client()
+amb = stranger.get('/p/同名作品')
+check('裸链接命中歧义时明确提示', amb.status_code == 404
+      and '链接有歧义' in amb.get_data(as_text=True), f'{amb.status_code}')
+
+p_one = stranger.get('/p/同名作品?u=' + h_one).get_data(as_text=True)
+p_two = stranger.get('/p/同名作品?u=' + h_two).get_data(as_text=True)
+check('带作者标识打开第一份', '&lt;b&gt;ONE&lt;/b&gt;' in p_one and '&lt;b&gt;TWO&lt;/b&gt;' not in p_one)
+check('带作者标识打开第二份', '&lt;b&gt;TWO&lt;/b&gt;' in p_two and '&lt;b&gt;ONE&lt;/b&gt;' not in p_two)
+check('作者裸链接拿到的是自己的作品',
+      '&lt;b&gt;ONE&lt;/b&gt;' in one_owner.get('/p/同名作品').get_data(as_text=True))
+check('看板链接自带作者标识', 'u=' + h_one in one_owner.get('/dashboard').get_data(as_text=True))
+check('不存在的作者标识 404', stranger.get('/p/同名作品?u=nobody').status_code == 404)
+check('完整分享路径仍可访问', stranger.get(f'/{h_one}/同名作品').status_code == 200)
+check('纯净分享页同样支持消歧',
+      '&lt;b&gt;TWO&lt;/b&gt;' in stranger.get('/view/同名作品?u=' + h_two).get_data(as_text=True))
+
+# ── 12. 游客续期额度：3 天试用不能被无限续 ──────────────────────────────────
+renewer = app_module.app.test_client()
+renewer.post('/new', data={'title': '额度测试', 'html_source': '<b>x</b>', 'visibility': 'public'})
+rid = page_by_title('额度测试')['id']
+for _ in range(app_module.RENEW_MAX_TIMES):
+    renewer.post(f'/renew/{rid}')
+_c = sqlite3.connect(DB)
+_used = _c.execute('SELECT renew_count FROM pages WHERE id=?', (rid,)).fetchone()[0]
+_c.close()
+check('续期次数被记录', _used == app_module.RENEW_MAX_TIMES, f'{_used}')
+
+denied = renewer.post(f'/renew/{rid}', follow_redirects=True)
+check('超出额度给出注册引导', '续期次数已用完' in denied.get_data(as_text=True))
+_c = sqlite3.connect(DB)
+_used2 = _c.execute('SELECT renew_count FROM pages WHERE id=?', (rid,)).fetchone()[0]
+_c.close()
+check('被拒后不再增加计数', _used2 == app_module.RENEW_MAX_TIMES, f'{_used2}')
+check('看板标记续期已用完', '续期已用完' in renewer.get('/dashboard').get_data(as_text=True))
+
+# ── 13. 隐私说明与删除账号 ──────────────────────────────────────────────────
+pv = app_module.app.test_client().get('/privacy')
+pv_html = pv.get_data(as_text=True)
+check('隐私与数据页可访问', pv.status_code == 200)
+check('隐私页覆盖三种可见性', all(k in pv_html for k in ('公开', '仅链接', '私密')))
+check('隐私页说明删除方式', '删除账号' in pv_html and '保留多久' in pv_html)
+
+victim = app_module.app.test_client()
+victim.post('/register', data={'username': 'victim', 'email': 'v@test.local',
+                               'password': 'test12345', 'confirm_password': 'test12345',
+                               'handle': 'victim-h'})
+victim.post('/new', data={'title': '将被删除的作品', 'html_source': '<b>x</b>',
+                          'visibility': 'public'})
+wrong = victim.post('/delete_account', data={'password': 'nope', 'confirm': 'DELETE'},
+                    follow_redirects=True)
+check('密码错误时不删除账号',
+      '密码错误' in wrong.get_data(as_text=True) and handle_of('victim') is not None)
+no_confirm = victim.post('/delete_account', data={'password': 'test12345', 'confirm': 'yes'},
+                         follow_redirects=True)
+check('未键入 DELETE 不删除', '输入 DELETE' in no_confirm.get_data(as_text=True))
+done = victim.post('/delete_account', data={'password': 'test12345', 'confirm': 'DELETE'},
+                   follow_redirects=True)
+done_html = done.get_data(as_text=True)
+check('删除账号给出成功提示', '账号与全部作品已删除' in done_html)
+check('账号已从库中移除', handle_of('victim') is None)
+check('作品一并删除', page_by_title('将被删除的作品') is None)
+check('删除后回到未登录状态', 'href="/register"' in done_html)
+
 # ── 汇总 ─────────────────────────────────────────────────────────────────────
 passed = sum(1 for _, ok, _ in results if ok)
 print(f'\n==== {passed}/{len(results)} 通过 ====')

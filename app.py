@@ -212,6 +212,9 @@ def migrate_db():
             # 兜底：写入过 is_public 但未同步 visibility 的历史行
             db.execute("""UPDATE pages SET visibility = CASE WHEN is_public=1 THEN 'public' ELSE 'private' END
                           WHERE visibility IS NULL OR visibility NOT IN ('public','unlisted','private')""")
+        # 续期次数：游客作品可续期次数有限，避免 3 天试用被无限续等于永久
+        if 'renew_count' not in page_cols:
+            db.execute('ALTER TABLE pages ADD COLUMN renew_count INTEGER NOT NULL DEFAULT 0')
 
 init_db()
 
@@ -227,6 +230,7 @@ def login_required(f):
 
 # ── 游客身份（阶段2）─────────────────────────────────────────────────────────
 TRIAL_DAYS = 3  # 匿名作品分享有效期
+RENEW_MAX_TIMES = 6  # 匿名作品最多续期次数：每次 3 天，累计约 3 周后需注册才继续保留
 
 
 def _is_guest(db, user_id):
@@ -458,7 +462,8 @@ def logout():
 @login_required
 def settings():
     db = get_db()
-    user = db.execute('SELECT id, username, email, handle, password, show_fission FROM users WHERE id=?', (session['user_id'],)).fetchone()
+    user = db.execute('SELECT id, username, email, handle, password, show_fission, is_guest FROM users WHERE id=?', (session['user_id'],)).fetchone()
+    is_guest = bool(user['is_guest']) if user else False
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -478,7 +483,7 @@ def settings():
             elif db.execute('SELECT id FROM users WHERE handle=? AND id!=?', (handle, session['user_id'])).fetchone():
                 error = '公开标识已被占用'
             if error:
-                return render_template('settings.html', user=user, error=error)
+                return render_template('settings.html', user=user, error=error, is_guest=is_guest)
             db.execute('UPDATE users SET handle=? WHERE id=?', (handle, session['user_id']))
             db.commit()
             flash('公开标识已更新')
@@ -495,7 +500,7 @@ def settings():
                 error = '密码错误'
             
             if error:
-                return render_template('settings.html', user=user, error=error)
+                return render_template('settings.html', user=user, error=error, is_guest=is_guest)
             
             if email and '@' not in email:
                 error = '邮箱格式不正确'
@@ -504,7 +509,7 @@ def settings():
                 db.commit()
                 flash('邮箱已更新')
                 return redirect(url_for('settings'))
-            return render_template('settings.html', user=user, error=error)
+            return render_template('settings.html', user=user, error=error, is_guest=is_guest)
         
         elif action == 'change_password':
             old_password = request.form.get('old_password')
@@ -524,9 +529,9 @@ def settings():
                 db.commit()
                 flash('密码已修改')
                 return redirect(url_for('settings'))
-            return render_template('settings.html', user=user, error=error)
+            return render_template('settings.html', user=user, error=error, is_guest=is_guest)
     
-    return render_template('settings.html', user=user)
+    return render_template('settings.html', user=user, is_guest=is_guest)
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
@@ -535,7 +540,8 @@ def settings():
 def dashboard():
     db = get_db()
     rows = db.execute(
-        'SELECT * FROM pages WHERE user_id=? ORDER BY updated DESC',
+        'SELECT p.*, u.handle FROM pages p JOIN users u ON u.id=p.user_id'
+        ' WHERE p.user_id=? ORDER BY p.updated DESC',
         (session['user_id'],)
     ).fetchall()
     pages = []
@@ -551,6 +557,7 @@ def dashboard():
             except (ValueError, TypeError):
                 item['days_left'] = None
             item['hours_left'] = _hours_left(row)
+        item['renew_left'] = _renew_left(row) if item.get('share_expires_at') else None
         pages.append(item)
     # 到期提醒窗口：24 小时内到期；已过期的也纳入（提示是「已失效」而不是「将到期」）
     expiring = [p for p in pages
@@ -578,20 +585,33 @@ def _extend_expiry(user_id, db, page_id):
         except (ValueError, TypeError):
             pass
     expiry = (base + timedelta(days=TRIAL_DAYS)).isoformat()
-    db.execute('UPDATE pages SET share_expires_at=?, updated=? WHERE id=?',
+    db.execute('UPDATE pages SET share_expires_at=?, updated=?, renew_count=COALESCE(renew_count,0)+1'
+               ' WHERE id=?',
                (expiry, now.isoformat(), page_id))
     return expiry
+
+
+def _renew_left(page):
+    """该作品还剩几次续期额度；非游客作品（永久）返回 None。"""
+    if not page['share_expires_at']:
+        return None
+    used = page['renew_count'] if 'renew_count' in page.keys() else 0
+    return max(0, RENEW_MAX_TIMES - (used or 0))
 
 
 @app.route('/renew/<int:page_id>', methods=['POST'])
 @login_required
 def renew_page(page_id):
-    """匿名作品续期 3 天；注册/管理员作品永久无需续期。"""
+    """匿名作品续期 3 天；注册/管理员作品永久无需续期，游客续期有次数上限。"""
     db = get_db()
     page = db.execute('SELECT * FROM pages WHERE id=?', (page_id,)).fetchone()
     if not page or page['user_id'] != session['user_id']:
         abort(403)
     if not page['share_expires_at']:
+        return redirect(url_for('dashboard'))
+    if _renew_left(page) == 0:
+        flash('这个作品的免登录续期次数已用完（共 %d 次）。注册账号后作品永久保留。'
+              % RENEW_MAX_TIMES)
         return redirect(url_for('dashboard'))
     if _expiry_for(session['user_id'], db):
         _extend_expiry(session['user_id'], db, page_id)
@@ -602,17 +622,27 @@ def renew_page(page_id):
 @app.route('/renew_all', methods=['POST'])
 @login_required
 def renew_all_expiring():
-    """一键续期：把 24 小时内到期的作品统一延后 3 天。"""
+    """一键续期：把 24 小时内到期的作品统一延后 3 天（受续期额度限制）。"""
     db = get_db()
     if _expiry_for(session['user_id'], db):
         rows = db.execute(
-            'SELECT id, share_expires_at FROM pages WHERE user_id=? AND share_expires_at IS NOT NULL',
+            'SELECT * FROM pages WHERE user_id=? AND share_expires_at IS NOT NULL',
             (session['user_id'],)
         ).fetchall()
+        renewed = used_up = 0
         for row in rows:
-            if _hours_left(row) is not None and _hours_left(row) <= EXPIRY_WARN_HOURS:
-                _extend_expiry(session['user_id'], db, row['id'])
+            if _hours_left(row) is None or _hours_left(row) > EXPIRY_WARN_HOURS:
+                continue
+            if _renew_left(row) == 0:
+                used_up += 1
+                continue
+            _extend_expiry(session['user_id'], db, row['id'])
+            renewed += 1
         db.commit()
+        if renewed:
+            flash('已为 %d 个作品各延长 %d 天。' % (renewed, TRIAL_DAYS))
+        if used_up:
+            flash('%d 个作品已达免登录续期上限，注册账号后可永久保留。' % used_up)
     return redirect(url_for('dashboard'))
 
 # ── Create / Edit ─────────────────────────────────────────────────────────────
@@ -716,6 +746,54 @@ def delete_page(page_id):
     db.commit()
     return redirect(url_for('dashboard'))
 
+
+@app.route('/privacy')
+def privacy():
+    """隐私与数据说明：存什么、谁能看、保留多久、怎么删。"""
+    return render_template('privacy.html')
+
+
+@app.route('/delete_account', methods=['POST'])
+@login_required
+def delete_account():
+    """注销账号：连同作品、点赞、评论、举报一并删除，不可恢复。
+
+    注册用户需验证密码；游客账号没有可用密码（注册时随机生成、用户并不知晓），
+    因此只要求键入 DELETE 确认，避免临时身份的数据无法删除。
+    """
+    db = get_db()
+    uid = session['user_id']
+    user = db.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+    if not user:
+        session.clear()
+        return redirect(url_for('index'))
+    if user['is_admin']:
+        flash('管理员账号不能在此自助删除')
+        return redirect(url_for('settings'))
+    if (request.form.get('confirm') or '').strip().upper() != 'DELETE':
+        flash('请在确认框内输入 DELETE 后再提交')
+        return redirect(url_for('settings'))
+    if not user['is_guest'] and not check_password_hash(
+            user['password'], request.form.get('password') or ''):
+        flash('密码错误，账号未删除')
+        return redirect(url_for('settings'))
+
+    page_ids = [r['id'] for r in db.execute('SELECT id FROM pages WHERE user_id=?', (uid,))]
+    if page_ids:
+        marks = ','.join('?' * len(page_ids))
+        db.execute('DELETE FROM likes WHERE page_id IN (%s)' % marks, page_ids)
+        db.execute('DELETE FROM comments WHERE page_id IN (%s)' % marks, page_ids)
+        db.execute('DELETE FROM reports WHERE page_id IN (%s)' % marks, page_ids)
+    db.execute('DELETE FROM likes WHERE user_id=?', (uid,))
+    db.execute('DELETE FROM comments WHERE user_id=?', (uid,))
+    db.execute('DELETE FROM reports WHERE reporter_id=?', (uid,))
+    db.execute('DELETE FROM pages WHERE user_id=?', (uid,))
+    db.execute('DELETE FROM users WHERE id=?', (uid,))
+    db.commit()
+    session.clear()
+    flash('账号与全部作品已删除')
+    return redirect(url_for('index'))
+
 # ── Preview ───────────────────────────────────────────────────────────────────
 
 def _can_access(page):
@@ -736,20 +814,47 @@ def _can_access(page):
     return True
 
 
+AMBIGUOUS_SLUG = 'ambiguous-slug'
+
+
 def _page_or_403(slug, handle=None):
+    """按 slug 定位作品。
+
+    slug 只在「同一用户内」唯一，不同用户可以有同名作品。所以裸 /p/<slug>
+    必须消歧，不能像以前那样 ORDER BY id LIMIT 1 直接取最早一条——那会
+    把访客带到别人的作品上去。优先级：
+      1. 显式 handle（/<handle>/<slug>）
+      2. 查询串 ?u=<handle>（卡片链接自带，最常用）
+      3. 当前登录者自己的作品
+      4. 全站唯一
+      5. 仍有多条 → 明确报歧义，交给错误页提示改用完整链接
+    """
     db = get_db()
     if handle is None:
+        handle = (request.args.get('u') or '').strip().lower() or None
+    if handle:
         page = db.execute(
-            'SELECT p.*, u.username, u.handle FROM pages p JOIN users u ON p.user_id=u.id WHERE p.slug=? ORDER BY p.id LIMIT 1',
-            (slug,)
-        ).fetchone()
-    else:
-        page = db.execute(
-            'SELECT p.*, u.username, u.handle FROM pages p JOIN users u ON p.user_id=u.id WHERE u.handle=? AND p.slug=?',
+            'SELECT p.*, u.username, u.handle FROM pages p JOIN users u ON p.user_id=u.id'
+            ' WHERE u.handle=? AND p.slug=?',
             (handle, slug)
         ).fetchone()
-    if not page:
-        abort(404)
+        if not page:
+            abort(404)
+    else:
+        rows = db.execute(
+            'SELECT p.*, u.username, u.handle FROM pages p JOIN users u ON p.user_id=u.id'
+            ' WHERE p.slug=? ORDER BY p.id',
+            (slug,)
+        ).fetchall()
+        if not rows:
+            abort(404)
+        if len(rows) > 1:
+            me = session.get('user_id')
+            mine = [r for r in rows if r['user_id'] == me] if me else []
+            rows = mine or rows
+        if len(rows) > 1:
+            abort(404, description=AMBIGUOUS_SLUG)
+        page = rows[0]
     is_owner = 'user_id' in session and session['user_id'] == page['user_id']
     is_admin = 'user_id' in session and _is_admin(session['user_id'])
     # 审核未通过/待复审：对外一律 404（不暴露存在），作者与管理员仍可见
@@ -780,10 +885,27 @@ def forbidden(error):
 
 @app.errorhandler(404)
 def not_found(error):
+    """404 统一落地到品牌化页面；slug 撞名时给出「链接有歧义」的专门说明。"""
+    if getattr(error, 'description', '') == AMBIGUOUS_SLUG:
+        return render_template(
+            'error.html', code=404, title='链接有歧义',
+            message='这个地址对应多份同名作品，无法确定是哪一份。'
+                    '请使用完整的分享链接（形如 /作者标识/作品名称），或从首页重新点入。',
+            show_login=False), 404
     return render_template(
         'error.html', code=404, title='页面不存在',
         message='链接可能已删除、拼写有误，或作品尚未通过审核。',
         show_login=False), 404
+
+
+@app.template_global()
+def page_url(page, **kwargs):
+    """作品页面链接：始终带上作者标识 (?u=handle)，避免跨用户同名作品串页。"""
+    try:
+        handle = page['handle']
+    except (KeyError, IndexError):
+        handle = None
+    return url_for('preview', slug=page['slug'], u=handle, **kwargs)
 
 
 def _owner_expiry_ctx(page):

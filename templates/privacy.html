@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>隐私与数据 · HTML Gallery</title>
+<meta name="description" content="HTML Gallery 存哪些数据、谁能看到、保留多久、怎么删除。">
+<link rel="canonical" href="{{ site_url }}/privacy">
+<meta name="robots" content="index,follow">
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f8f9fb;
+    --surface: #ffffff;
+    --border: #e8eaed;
+    --text: #1a1a2e;
+    --muted: #8a8fa8;
+    --accent: #5b6af0;
+    --accent-light: #eef0ff;
+    --radius: 14px;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+                 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    background: var(--bg); color: var(--text);
+    line-height: 1.75; -webkit-font-smoothing: antialiased;
+  }
+
+  nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 1.5rem; background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-brand {
+    font-size: 1.05rem; font-weight: 600; color: var(--text); text-decoration: none;
+  }
+  .nav-brand span { color: var(--accent); }
+  .nav-links { display: flex; align-items: center; gap: 1.1rem; }
+  .nav-links a { color: var(--muted); text-decoration: none; font-size: .9rem; }
+  .nav-links a:hover { color: var(--text); }
+
+  .wrap { max-width: 720px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+
+  h1 { font-size: 1.75rem; letter-spacing: -.02em; margin-bottom: .4rem; }
+  .lead { color: var(--muted); font-size: .95rem; margin-bottom: 2rem; text-wrap: pretty; }
+
+  section {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1.4rem 1.5rem; margin-bottom: 1rem;
+  }
+  h2 { font-size: 1.02rem; margin-bottom: .7rem; }
+  p, li { font-size: .92rem; color: #33374a; }
+  p + p { margin-top: .6rem; }
+  ul { margin: .5rem 0 0 1.15rem; }
+  li { margin: .28rem 0; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .86em; background: #f3f4f8; padding: .1em .38em; border-radius: 4px;
+  }
+  .note {
+    background: var(--accent-light); border: 1px solid #d8ddff;
+    color: #2f3ba8; border-radius: 10px; padding: .85rem 1rem;
+    font-size: .88rem; margin-bottom: 1rem;
+  }
+  .foot { color: var(--muted); font-size: .82rem; text-align: center; margin-top: 2rem; }
+  .foot a { color: var(--accent); text-decoration: none; }
+
+  @media (max-width: 600px) {
+    .wrap { padding: 1.75rem 1rem 3rem; }
+    section { padding: 1.15rem 1.1rem; }
+    h1 { font-size: 1.45rem; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
+  <div class="nav-links">
+    {% if session.user_id %}
+      <a href="{{ url_for('dashboard') }}">我的作品</a>
+      <a href="{{ url_for('settings') }}">设置</a>
+    {% else %}
+      <a href="{{ url_for('login') }}">登录</a>
+      <a href="{{ url_for('register') }}">注册</a>
+    {% endif %}
+  </div>
+</nav>
+
+<div class="wrap">
+  <h1>隐私与数据</h1>
+  <p class="lead">一句话：作品存在我们的服务器上，只有你能决定它给谁看；随时可以自己删掉，包括整个账号。</p>
+
+  <div class="note">
+    本站不使用第三方统计、广告或用户画像脚本，也不做设备指纹；页面不加载任何第三方字体与 CDN 资源。
+  </div>
+
+  <section>
+    <h2>我们存哪些数据</h2>
+    <ul>
+      <li>你发布的作品：标题、描述、HTML 源码（从链接导入时，对话记录与图片会一并存入作品里）。</li>
+      <li>账号信息：用户名、邮箱（注册时填写）、密码哈希。密码以不可逆哈希保存，我们无法看到原文。</li>
+      <li>临时身份：未登录发布时，浏览器里会写入一个会话 Cookie，用来认领你的作品；不带任何广告标识。</li>
+      <li>互动记录：你点的赞、发的评论（含审核状态）、提交的举报。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>谁能看到你的作品</h2>
+    <ul>
+      <li><strong>公开</strong>：出现在首页画廊，任何人都能打开。</li>
+      <li><strong>仅链接</strong>：不进首页，知道链接的人可以打开；已设置 <code>noindex</code>，不会被搜索引擎收录。</li>
+      <li><strong>私密</strong>：只有你登录后可见，其他人打开会看到「这是一个私密作品」。</li>
+    </ul>
+    <p>作品过期后，链接对其他人显示为已失效，数据仍保留在原处，你可以随时续期或删除。</p>
+  </section>
+
+  <section>
+    <h2>保留多久</h2>
+    <ul>
+      <li><strong>注册账号</strong>：作品永久保留，直到你主动删除。</li>
+      <li><strong>免登录（临时身份）</strong>：作品 3 天有效，可自助续期，最多 6 次；注册后转为永久。</li>
+      <li><strong>临时身份的找回</strong>：身份只存在当前浏览器的 Cookie 里，清除 Cookie 或换设备后无法找回。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>怎么删除</h2>
+    <ul>
+      <li><strong>单个作品</strong>：我的作品 → 删除，立即生效。</li>
+      <li><strong>整个账号</strong>：设置 → 删除账号。会一并删除你的全部作品、点赞、评论与举报，不可恢复。</li>
+      <li><strong>导出</strong>：作品的 HTML 源码可在编辑页复制带走；暂不提供打包导出。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>从外部链接导入时发生了什么</h2>
+    <p>当你粘贴 DeepSeek、豆包、元宝等分享链接时，我们的服务器会访问该链接，读取公开的分享内容；其中的图片与文本附件会被下载并转存进你的作品，以保证链接失效后作品仍然完整。</p>
+    <p>服务器不会带着你的登录状态去访问这些站点，也不会把抓取到的内容用于分析或推荐。</p>
+  </section>
+
+  <section>
+    <h2>内容合规</h2>
+    <p>上传内容会经过敏感词扫描；公开作品可被其他用户举报并进入人工复审，复审期间对外不可见。请勿上传违法或侵权内容。</p>
+  </section>
+
+  <p class="foot">
+    本说明随功能变化更新 · 有疑问可从 <a href="{{ url_for('index') }}">首页</a> 找到作者
+  </p>
+</div>
+
+</body>
+</html>

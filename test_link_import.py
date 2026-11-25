@@ -139,6 +139,67 @@ check('附件占位符换成可读标签', 'class="attachment"' in page_att and 
 check('未知占位符被清除', '@replace=' not in page_att and 'media_zzz' not in page_att)
 check('无控制字符残留', '\x02' not in page_att)
 
+# 思考过程：deepSearchAgent 块原先整块丢弃，只剩结论，观感上像「抓取不全」
+chat_think = {'convs': [{'speaker': 'ai', 'speechesV2': [{
+    'content': [
+        {'type': 'deepSearchAgent', 'title': '已处理',
+         'contents': [{'type': 'think', 'text': '先判断需求是否明确'},
+                      {'type': 'think', 'text': '再定实现方案'}]},
+        {'type': 'text', 'msg': '做好了，这是个单页。'},
+    ]}]}]}
+page_think = li._yuanbao_conversation_html(chat_think, '标题', '')
+check('思考过程折叠展示', '<details class="think">' in page_think and '思考过程' in page_think)
+check('思考内容被保留', '先判断需求是否明确' in page_think and '再定实现方案' in page_think)
+check('思考块默认收起', '<details class="think" open>' not in page_think)
+check('思考排在正文之前', page_think.index('思考过程') < page_think.index('做好了'))
+_think_esc = li._think_html('<script>alert(1)</script>')
+check('思考内容同样转义', '&lt;script&gt;' in _think_esc and '<script>' not in _think_esc)
+check('超长思考截断并注明', '只保留前' in li._think_html('啊' * (li.THINK_MAX_CHARS + 50)))
+chat_only_think = {'convs': [{'speaker': 'ai', 'speechesV2': [{
+    'content': [{'type': 'deepSearchAgent', 'contents': [{'type': 'think', 'text': '只有思考记录'}]}]}]}]}
+check('只有思考时不丢整条对话',
+      '只有思考记录' in li._yuanbao_conversation_html(chat_only_think, '标题', ''))
+
+# 文本附件（.html 等）也落库：标签从死链变成可下载的 data URI
+class _Resp:
+    """本地最小响应替身：避免依赖后面才定义的 _FakeResp。"""
+    def __init__(self, body, ctype):
+        self._body = body
+        self.headers = {'Content-Type': ctype}
+
+    def read(self, n=-1):
+        return self._body if n is None or n < 0 else self._body[:n]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+file_media = [{'id': 'media_f', 'title': 'site.html', 'media_type': 'code',
+               'kind': 'file', 'url': 'https://userassets.yuanbao.tencent.com/a.html'}]
+with mock.patch.object(li, 'assert_public_url'), \
+     mock.patch.object(li, '_build_opener') as op:
+    op.return_value.open.return_value = _Resp(b'<h1>hi</h1>', 'text/html')
+    inline_file = li._inline_yuanbao_images(file_media)
+check('文本附件内联为 text/html',
+      inline_file.get('media_f', '').startswith('data:text/html;base64,'))
+
+
+def _no_fetch():
+    with mock.patch.object(li, '_build_opener') as op:
+        li._inline_yuanbao_images([{'id': 'media_p', 'title': 'a.pdf', 'media_type': 'file',
+                                    'kind': 'file', 'url': 'https://x/a.pdf'}])
+        return op.called
+
+
+check('不可内联的类型不发起下载', not _no_fetch())
+page_file = li._yuanbao_conversation_html(chat_att, '标题', '',
+                                          {'media_abc': 'data:text/html;base64,QUJD'})
+check('附件标签变成可下载链接',
+      'href="data:text/html;base64,QUJD" download="海报.html"' in page_file)
+
 # 图片附件：元宝的图多无文件名，旧逻辑会整张丢掉；且直链带签名会过期，需内联
 class _FakeResp:
     def __init__(self, body, ctype):
