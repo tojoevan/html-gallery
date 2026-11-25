@@ -125,7 +125,10 @@ anon = app_module.app.test_client()  # 全新客户端 = 无 session 访客
 share_url = f"/alice-h/{ap['slug']}"
 r = anon.get(share_url)
 check('过期作品分享返回 410', r.status_code == 410, f'got {r.status_code}')
-check('410 页面有友好提示', '失效' in r.get_data(as_text=True))
+gone_html = r.get_data(as_text=True)
+check('410 页面有友好提示', '失效' in gone_html)
+check('410 页面给作者留找回入口', '/dashboard' in gone_html and '我的看板' in gone_html)
+check('410 页面声明不会被自动清除', '不会被自动清除' in gone_html)
 check('过期后数据仍在库', page_by_title('alice-page') is not None)
 
 # 首页过滤
