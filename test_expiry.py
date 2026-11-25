@@ -128,7 +128,7 @@ check('过期作品分享返回 410', r.status_code == 410, f'got {r.status_code
 gone_html = r.get_data(as_text=True)
 check('410 页面有友好提示', '失效' in gone_html)
 check('410 页面给作者留找回入口', '/dashboard' in gone_html and '我的看板' in gone_html)
-check('410 页面声明不会被自动清除', '不会被自动清除' in gone_html)
+check('410 页面说明会转入管理员回收站', '回收站' in gone_html and '续期' in gone_html)
 check('过期后数据仍在库', page_by_title('alice-page') is not None)
 
 # 首页过滤
