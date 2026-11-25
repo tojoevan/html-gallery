@@ -49,6 +49,48 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+# ── 作品短码 ──────────────────────────────────────────────────────────────────
+# 中文标题直接进 URL 会被 percent-encode 成 %E4%B8%80... 一长串，粘到聊天里又长又
+# 认不出。作品地址统一改成 7 位小写短码（剔除 0/1/i/l/o 易混字符），形如 /p/k7m2xq3。
+SLUG_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789'
+SLUG_LEN = 7
+SLUG_RE = re.compile(r'[%s]{%d}' % (SLUG_ALPHABET, SLUG_LEN))
+
+
+def _is_short_slug(slug):
+    return bool(SLUG_RE.fullmatch(slug or ''))
+
+
+def _new_slug(db):
+    """生成全站唯一的 7 位短码。"""
+    while True:
+        code = ''.join(secrets.choice(SLUG_ALPHABET) for _ in range(SLUG_LEN))
+        if not db.execute('SELECT 1 FROM pages WHERE slug=?', (code,)).fetchone():
+            return code
+
+
+def _migrate_slugs(db):
+    """把含中文/非 ASCII（或过长）的旧 slug 换成短码，旧 slug 记入别名表以便 301。
+
+    幂等：短码直接跳过；全 ASCII 且不超过 20 字符的旧 slug 原样保留。
+    """
+    db.execute('''CREATE TABLE IF NOT EXISTS page_aliases (
+                    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                    page_id INTEGER NOT NULL,
+                    slug    TEXT    NOT NULL,
+                    UNIQUE(page_id, slug))''')
+    db.execute('CREATE INDEX IF NOT EXISTS idx_alias_slug ON page_aliases(slug)')
+    for row in db.execute('SELECT id, slug FROM pages').fetchall():
+        old = row['slug'] or ''
+        if not old or _is_short_slug(old):
+            continue
+        if all(ord(c) < 128 for c in old) and len(old) <= 20:
+            continue
+        db.execute('UPDATE pages SET slug=? WHERE id=?', (_new_slug(db), row['id']))
+        db.execute('INSERT OR IGNORE INTO page_aliases (page_id, slug) VALUES (?,?)',
+                   (row['id'], old))
+
+
 def init_db():
     """初始化数据库，创建所有必要的表"""
     with get_db() as db:
@@ -233,6 +275,8 @@ def migrate_db():
         # 续期次数：游客作品可续期次数有限，避免 3 天试用被无限续等于永久
         if 'renew_count' not in page_cols:
             db.execute('ALTER TABLE pages ADD COLUMN renew_count INTEGER NOT NULL DEFAULT 0')
+        # 作品地址短码化：中文 slug 迁移为 7 位短码，旧链接经别名表 301
+        _migrate_slugs(db)
 
 init_db()
 
@@ -814,7 +858,7 @@ def _insert_page(title, html_source, description, visibility, db):
     visibility 为三态 public / unlisted / private。
     """
     now = datetime.now().isoformat()
-    slug = unique_slug(title, db, session['user_id'])
+    slug = _new_slug(db)
     expiry = _expiry_for(session['user_id'], db)
     # is_public 与 visibility 同步写：前者维持「进画廊」旧语义，首页查询无需改动
     db.execute(
@@ -966,13 +1010,13 @@ AMBIGUOUS_SLUG = 'ambiguous-slug'
 
 
 def _page_or_403(slug, handle=None):
-    """按 slug 定位作品。
+    """按短码（或旧 slug 别名）定位作品。
 
-    slug 只在「同一用户内」唯一，不同用户可以有同名作品。所以裸 /p/<slug>
-    必须消歧，不能像以前那样 ORDER BY id LIMIT 1 直接取最早一条——那会
-    把访客带到别人的作品上去。优先级：
+    新作品一律 7 位短码、全站唯一，裸 /p/<code> 即可定位。旧的中文 slug 保留在
+    page_aliases 中，旧链接照样能打开（视图层再 301 到规范地址）。历史 ASCII slug
+    仍是「用户内唯一」，同名时按下面的优先级消歧：
       1. 显式 handle（/<handle>/<slug>）
-      2. 查询串 ?u=<handle>（卡片链接自带，最常用）
+      2. 查询串 ?u=<handle>（旧卡片链接自带，最常用）
       3. 当前登录者自己的作品
       4. 全站唯一
       5. 仍有多条 → 明确报歧义，交给错误页提示改用完整链接
@@ -980,19 +1024,20 @@ def _page_or_403(slug, handle=None):
     db = get_db()
     if handle is None:
         handle = (request.args.get('u') or '').strip().lower() or None
+    alias = ' OR p.id IN (SELECT page_id FROM page_aliases WHERE slug=?)'
     if handle:
         page = db.execute(
             'SELECT p.*, u.username, u.handle FROM pages p JOIN users u ON p.user_id=u.id'
-            ' WHERE u.handle=? AND p.slug=?',
-            (handle, slug)
+            ' WHERE u.handle=? AND (p.slug=?' + alias + ')',
+            (handle, slug, slug)
         ).fetchone()
         if not page:
             abort(404)
     else:
         rows = db.execute(
             'SELECT p.*, u.username, u.handle FROM pages p JOIN users u ON p.user_id=u.id'
-            ' WHERE p.slug=? ORDER BY p.id',
-            (slug,)
+            ' WHERE p.slug=?' + alias + ' ORDER BY p.id',
+            (slug, slug)
         ).fetchall()
         if not rows:
             abort(404)
@@ -1048,12 +1093,16 @@ def not_found(error):
 
 @app.template_global()
 def page_url(page, **kwargs):
-    """作品页面链接：始终带上作者标识 (?u=handle)，避免跨用户同名作品串页。"""
+    """作品页面链接：新作品是全局唯一短码，裸 /p/<code> 即可定位（最短）；
+    历史 ASCII slug 仍是用户内唯一，保留 ?u= 消歧。"""
     try:
         handle = page['handle']
     except (KeyError, IndexError):
         handle = None
-    return url_for('preview', slug=page['slug'], u=handle, **kwargs)
+    slug = page['slug']
+    if _is_short_slug(slug):
+        return url_for('preview', slug=slug, **kwargs)
+    return url_for('preview', slug=slug, u=handle, **kwargs)
 
 
 def _owner_expiry_ctx(page):
@@ -1078,6 +1127,8 @@ def _owner_expiry_ctx(page):
 @app.route('/p/<slug>')
 def preview(slug):
     page = _page_or_403(slug)
+    if page['slug'] != slug:  # 旧链接 / 别名：301 到短码，规范地址只此一份
+        return redirect(url_for('preview', slug=page['slug']), 301)
     return render_template(
         'preview.html', page=page,
         html_source=page['html_source'],
@@ -1101,6 +1152,8 @@ def _fission_ctx(db, page):
 def view(slug):
     """纯净分享视图：只有作品，无顶栏无评论，iframe 独立视口保留作品自身 sticky。"""
     page = _page_or_403(slug)
+    if page['slug'] != slug:
+        return redirect(url_for('view', slug=page['slug']), 301)
     ctx = _fission_ctx(get_db(), page)
     return render_template('view.html', page=page, html_source=page['html_source'],
                            **_owner_expiry_ctx(page), **ctx)
@@ -1477,8 +1530,10 @@ def api_review(report_id, action):
 # 放在所有静态路由之后：Flask 静态路由优先，两段动态路径不会吃掉 /login 等。
 @app.route('/<handle>/<slug>')
 def share(handle, slug):
-    """公开分享链接：按公开标识 + 作品后缀定位，不含登录用户名。"""
+    """公开分享链接：按公开标识 + 作品短码定位，不含登录用户名。"""
     page = _page_or_403(slug, handle=handle)
+    if page['slug'] != slug or page['handle'] != handle:
+        return redirect(url_for('share', handle=page['handle'], slug=page['slug']), 301)
     ctx = _fission_ctx(get_db(), page)
     return render_template('view.html', page=page, html_source=page['html_source'],
                            **_owner_expiry_ctx(page), **ctx)

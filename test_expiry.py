@@ -178,13 +178,13 @@ visitor = app_module.app.test_client()
 home_all = visitor.get('/').get_data(as_text=True)
 check('首页只有公开作品', 'vis-public' in home_all
       and 'vis-unlisted' not in home_all and 'vis-private' not in home_all)
-check('仅链接作品持链接可看', visitor.get('/p/vis-unlisted').status_code == 200)
-check('私密作品他人不可见', visitor.get('/p/vis-private').status_code == 403)
-check('作者仍可看自己私密作品', client.get('/p/vis-private').status_code == 200)
+check('仅链接作品持链接可看', visitor.get('/p/' + unl['slug']).status_code == 200)
+check('私密作品他人不可见', visitor.get('/p/' + pri['slug']).status_code == 403)
+check('作者仍可看自己私密作品', client.get('/p/' + pri['slug']).status_code == 200)
 
 edit_html = client.get(f"/edit/{unl['id']}").get_data(as_text=True)
 check('编辑页回填仅链接', 'value="unlisted" checked' in edit_html)
-preview_unl = client.get('/p/vis-unlisted').get_data(as_text=True)
+preview_unl = client.get('/p/' + unl['slug']).get_data(as_text=True)
 check('预览页显示仅链接标识', 'nav-unlisted' in preview_unl)
 
 # ── 8. 到期前提醒 + 一键续期 ────────────────────────────────────────────────
@@ -201,9 +201,9 @@ check('看板出现到期提醒', '个作品将在 24 小时内到期' in dash_s
 check('看板提供一键续期', '一键续期全部' in dash_soon)
 check('看板小时数向上取整', '剩余 5 小时' in dash_soon)
 
-owner_preview = guest_client.get('/p/guest-renew').get_data(as_text=True)
+owner_preview = guest_client.get('/p/' + page_by_title('guest-renew')['slug']).get_data(as_text=True)
 check('作者预览页有到期提醒条', '<div class="expiry-bar">' in owner_preview and '5 小时' in owner_preview)
-visitor_preview = app_module.app.test_client().get('/p/guest-renew').get_data(as_text=True)
+visitor_preview = app_module.app.test_client().get('/p/' + page_by_title('guest-renew')['slug']).get_data(as_text=True)
 check('访客看不到到期提醒条', '<div class="expiry-bar">' not in visitor_preview)
 
 guest_client.post('/renew_all')
@@ -240,9 +240,9 @@ check('纯净分享页作者有到期条', '<div class="expiry-bar">' in share_o
 share_guest = app_module.app.test_client().get(f"/view/{page_by_title('guest-renew')['slug']}").get_data(as_text=True)
 check('纯净分享页访客无到期条', '<div class="expiry-bar">' not in share_guest)
 check('仅链接作品 noindex', 'name="robots" content="noindex' in
-      app_module.app.test_client().get('/p/vis-unlisted').get_data(as_text=True))
+      app_module.app.test_client().get('/p/' + unl['slug']).get_data(as_text=True))
 check('公开作品不加 noindex', 'name="robots"' not in
-      app_module.app.test_client().get('/p/vis-public').get_data(as_text=True))
+      app_module.app.test_client().get('/p/' + pub['slug']).get_data(as_text=True))
 
 # ── 11. 跨用户同名作品：裸链接不再串页 ─────────────────────────────────────
 one_owner = app_module.app.test_client()
@@ -252,28 +252,35 @@ two_owner.post('/new', data={'title': '同名作品', 'html_source': '<b>TWO</b>
 
 _c = sqlite3.connect(DB)
 _c.row_factory = sqlite3.Row
-_same = _c.execute('''SELECT p.id, u.handle FROM pages p JOIN users u ON u.id=p.user_id
-                      WHERE p.slug='同名作品' ORDER BY p.id''').fetchall()
-_c.close()
-check('同名 slug 跨用户各自独立存在', len(_same) == 2, f'{len(_same)}')
+_same = _c.execute('''SELECT p.id, p.slug, u.handle FROM pages p JOIN users u ON u.id=p.user_id
+                      WHERE p.title='同名作品' ORDER BY p.id''').fetchall()
+check('同名标题各自生成不同短码', len(_same) == 2 and _same[0]['slug'] != _same[1]['slug'],
+      f"{[r['slug'] for r in _same]}")
 h_one, h_two = _same[0]['handle'], _same[1]['handle']
+s_one = _same[0]['slug']
+# 人为制造同 slug（模拟历史 ASCII 数据），验证消歧逻辑仍有效
+_c.execute('UPDATE pages SET slug=? WHERE id=?', (s_one, _same[1]['id']))
+_c.commit()
+_c.close()
 
 stranger = app_module.app.test_client()
-amb = stranger.get('/p/同名作品')
+amb = stranger.get('/p/' + s_one)
 check('裸链接命中歧义时明确提示', amb.status_code == 404
       and '链接有歧义' in amb.get_data(as_text=True), f'{amb.status_code}')
 
-p_one = stranger.get('/p/同名作品?u=' + h_one).get_data(as_text=True)
-p_two = stranger.get('/p/同名作品?u=' + h_two).get_data(as_text=True)
+p_one = stranger.get('/p/' + s_one + '?u=' + h_one).get_data(as_text=True)
+p_two = stranger.get('/p/' + s_one + '?u=' + h_two).get_data(as_text=True)
 check('带作者标识打开第一份', '&lt;b&gt;ONE&lt;/b&gt;' in p_one and '&lt;b&gt;TWO&lt;/b&gt;' not in p_one)
 check('带作者标识打开第二份', '&lt;b&gt;TWO&lt;/b&gt;' in p_two and '&lt;b&gt;ONE&lt;/b&gt;' not in p_two)
 check('作者裸链接拿到的是自己的作品',
-      '&lt;b&gt;ONE&lt;/b&gt;' in one_owner.get('/p/同名作品').get_data(as_text=True))
-check('看板链接自带作者标识', 'u=' + h_one in one_owner.get('/dashboard').get_data(as_text=True))
-check('不存在的作者标识 404', stranger.get('/p/同名作品?u=nobody').status_code == 404)
-check('完整分享路径仍可访问', stranger.get(f'/{h_one}/同名作品').status_code == 200)
+      '&lt;b&gt;ONE&lt;/b&gt;' in one_owner.get('/p/' + s_one).get_data(as_text=True))
+check('看板链接使用短码，不含 ?u=',
+      '/p/' + s_one in one_owner.get('/dashboard').get_data(as_text=True)
+      and 'u=' + h_one not in one_owner.get('/dashboard').get_data(as_text=True))
+check('不存在的作者标识 404', stranger.get('/p/' + s_one + '?u=nobody').status_code == 404)
+check('完整分享路径仍可访问', stranger.get(f'/{h_one}/{s_one}').status_code == 200)
 check('纯净分享页同样支持消歧',
-      '&lt;b&gt;TWO&lt;/b&gt;' in stranger.get('/view/同名作品?u=' + h_two).get_data(as_text=True))
+      '&lt;b&gt;TWO&lt;/b&gt;' in stranger.get('/view/' + s_one + '?u=' + h_two).get_data(as_text=True))
 
 # ── 12. 游客续期额度：3 天试用不能被无限续 ──────────────────────────────────
 renewer = app_module.app.test_client()
