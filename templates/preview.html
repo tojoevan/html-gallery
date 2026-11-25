@@ -1,9 +1,24 @@
+{% set desc_raw = (page.description or '').strip() %}
+{% set meta_desc = (page.title ~ ' · 在 HTML Gallery 上查看这个可交互作品')
+   if (not desc_raw or desc_raw.startswith('从链接导入')) else desc_raw %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ page.title }}</title>
+<title>{{ page.title }} · HTML Gallery</title>
+<meta name="description" content="{{ meta_desc | truncate(110, true, '…') }}">
+<link rel="canonical" href="{{ site_url }}{{ request.path }}">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="HTML Gallery">
+<meta property="og:title" content="{{ page.title }}">
+<meta property="og:description" content="{{ meta_desc | truncate(110, true, '…') }}">
+<meta property="og:url" content="{{ site_url }}{{ request.path }}">
+<meta property="og:image" content="{{ site_url }}/static/og-default.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ page.title }}">
+<meta name="twitter:description" content="{{ meta_desc | truncate(110, true, '…') }}">
+<meta name="twitter:image" content="{{ site_url }}/static/og-default.png">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -151,7 +166,7 @@
   <div class="nav-left">
     <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
     <span class="nav-sep"></span>
-    <span class="nav-title" title="{{ page.description or page.title }}">{{ page.title }}</span>
+    <span class="nav-title" title="{{ meta_desc | truncate(110, true, '…') }}">{{ page.title }}</span>
     {% if not page.is_public %}<span class="nav-private">私密</span>{% endif %}
     <span class="nav-author">by {{ page.username }}</span>
   </div>

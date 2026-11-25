@@ -24,6 +24,10 @@ DATABASE = os.path.join(INSTANCE_DIR, 'gallery.db')
 # 请求体总上限，留 64KB 给表单其他字段
 app.config['MAX_CONTENT_LENGTH'] = 3 * 1024 * 1024 + 64 * 1024
 
+# 对外站点地址：用于 canonical / OG 卡片的绝对链接（反代后 request.scheme 可能失真）
+SITE_URL = (os.environ.get('GALLERY_SITE_URL') or 'https://gallery.njit.top').rstrip('/')
+app.jinja_env.globals['site_url'] = SITE_URL
+
 # ── DB helpers ──────────────────────────────────────────────────────────────
 
 def get_db():

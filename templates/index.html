@@ -3,7 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HTML Gallery</title>
+<title>HTML Gallery · 把 AI 对话与 HTML 作品一键发布成网页</title>
+<meta name="description" content="粘贴链接或源码，一键发布成可交互网页。支持 DeepSeek、豆包、元宝分享链接与任意网页 URL，免注册即可发布，作品可选公开或私密。">
+<link rel="canonical" href="{{ site_url }}/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="HTML Gallery">
+<meta property="og:title" content="HTML Gallery · 把 AI 对话与 HTML 作品一键发布成网页">
+<meta property="og:description" content="粘贴链接或源码，一键发布成可交互网页。支持 DeepSeek、豆包、元宝分享链接与任意网页 URL。">
+<meta property="og:url" content="{{ site_url }}/">
+<meta property="og:image" content="{{ site_url }}/static/og-default.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="HTML Gallery · 把 AI 对话与 HTML 作品一键发布成网页">
+<meta name="twitter:description" content="粘贴链接或源码，一键发布成可交互网页。">
+<meta name="twitter:image" content="{{ site_url }}/static/og-default.png">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -73,6 +85,14 @@
     text-wrap: balance;
   }
   .hero-actions { margin-top: 2rem; display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap; }
+  .hero-facts {
+    display: flex; flex-wrap: wrap; justify-content: center;
+    gap: .45rem .6rem; margin: 1.5rem 0 0; padding: 0; list-style: none;
+  }
+  .hero-facts li {
+    font-size: .78rem; color: var(--muted); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 999px; padding: .28rem .72rem;
+  }
   .btn-hero {
     display: inline-flex; align-items: center; gap: .4rem;
     padding: .7rem 1.6rem; border-radius: 10px; font-size: .95rem;
@@ -255,9 +275,9 @@
 
 <div class="hero">
   <h1>展示你的 <em>HTML</em> 设计</h1>
-  <p>粘贴源码或链接一键发布，支持 DeepSeek、豆包链接，元宝可粘贴源码。</p>
+  <p>粘贴链接或源码，一键发布成网页。DeepSeek、豆包、元宝都支持。</p>
   <div class="quick-import">
-    <input type="text" id="quick_url" placeholder="粘贴网页 / DeepSeek / 豆包链接，或元宝分享文字">
+    <input type="text" id="quick_url" placeholder="粘贴网页链接，或整段分享文字">
     <label class="quick-private" title="私密作品只有你自己可见（同一浏览器），公开作品展示在首页"><input type="checkbox" id="quick_private"> 私密</label>
     <button type="button" id="quick_btn">链接一键发布</button>
     <div class="quick-msg" id="quick_msg"></div>
@@ -282,6 +302,11 @@
     <a href="{{ url_for('dashboard') }}" class="btn-hero btn-hero-outline">我的作品</a>
   </div>
   {% endif %}
+  <ul class="hero-facts">
+    <li>网页 / DeepSeek / 豆包 / 元宝</li>
+    <li>发布为可交互网页</li>
+    <li>可公开或设私密</li>
+  </ul>
 </div>
 
 <div class="section-header">
