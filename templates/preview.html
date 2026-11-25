@@ -70,9 +70,10 @@
     nav { padding: 0 1rem; }
   }
 
+  /* 独立视口：作品在 iframe 内滚动，避免 fixed 布局 / 异步渲染页面的高度上报失真 */
   .preview-container { max-width: 100%; margin: 0; padding: 0; }
   .preview-frame {
-    width: 100%; min-height: 80vh;
+    display: block; width: 100%; height: 100vh;
     border: none;
     background: #fff;
   }
@@ -203,15 +204,6 @@
   const currentUserId = {{ current_user_id or 'null' }};
   const isLoggedIn = currentUserId !== null;
   const isAuthor = {{ 'true' if page.user_id == session.get('user_id') else 'false' }};
-
-  // iframe 自适应高度：只接受来自本页 iframe 的上报，避免双滚动条
-  const previewFrame = document.getElementById('previewFrame');
-  window.addEventListener('message', function(e) {
-    if (e.source !== previewFrame.contentWindow) return;
-    if (!e.data || typeof e.data.__galleryHeight !== 'number') return;
-    const h = Math.max(e.data.__galleryHeight, 200);
-    previewFrame.style.height = h + 'px';
-  });
 
   // Load likes
   fetch('/api/likes/' + pageId).then(r => r.json()).then(d => {

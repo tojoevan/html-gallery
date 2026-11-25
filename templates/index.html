@@ -69,7 +69,8 @@
   .hero h1 em { font-style: normal; color: var(--accent); }
   .hero p {
     margin-top: .9rem; font-size: 1.05rem; color: var(--muted);
-    max-width: 480px; margin-inline: auto; line-height: 1.7;
+    max-width: 560px; margin-inline: auto; line-height: 1.7;
+    text-wrap: balance;
   }
   .hero-actions { margin-top: 2rem; display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap; }
   .btn-hero {
@@ -98,8 +99,22 @@
   }
   .quick-import button:hover { opacity: .88; }
   .quick-import button:disabled { opacity: .55; cursor: wait; }
+  .quick-private { display: inline-flex; align-items: center; gap: .3rem; font-size: .9rem; color: var(--muted); white-space: nowrap; cursor: pointer; }
+  .quick-private input { flex: none; min-width: 0; width: 15px; height: 15px; padding: 0; border: none; background: transparent; accent-color: var(--accent); }
   .quick-msg { width: 100%; font-size: .85rem; min-height: 1.2rem; text-align: center; }
   .quick-msg.err { color: #a8071a; }
+  .quick-hint { font-size: .85rem; color: var(--muted); margin-top: .2rem; }
+  .quick-hint a { color: var(--accent); text-decoration: none; }
+  .quick-hint a:hover { text-decoration: underline; }
+  .variant-pick { width: 100%; display: none; flex-direction: column; gap: .5rem; text-align: left;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: .8rem 1rem; }
+  .variant-pick.show { display: flex; }
+  .variant-pick-title { font-size: .85rem; color: var(--muted); }
+  .variant-pick label { display: flex; align-items: center; gap: .55rem; font-size: .9rem; cursor: pointer; }
+  .variant-pick label input { flex: none; min-width: 0; width: 16px; height: 16px; padding: 0;
+    border: none; background: transparent; accent-color: var(--accent); }
+  .variant-pick .desc { color: var(--muted); font-size: .8rem; }
+  .variant-pick button { align-self: flex-start; }
 
   /* ── Section ── */
   .section-header {
@@ -132,9 +147,10 @@
   .card:hover { transform: translateY(-4px); box-shadow: var(--shadow-hover); }
 
   .card-thumb {
-    width: 100%; aspect-ratio: 16/9;
+    display: block; width: 100%; aspect-ratio: 16/9;
     background: linear-gradient(135deg, #f0f2ff 0%, #e8f4fd 100%);
     overflow: hidden; position: relative;
+    text-decoration: none; color: inherit;
   }
   .card-thumb iframe {
     width: 200%; height: 200%;
@@ -239,14 +255,24 @@
 
 <div class="hero">
   <h1>展示你的 <em>HTML</em> 设计</h1>
-  <p>粘贴源码或作品链接，一键发布，分享给任何人。</p>
+  <p>粘贴源码或链接一键发布，支持 DeepSeek、豆包链接，元宝可粘贴源码。</p>
   <div class="quick-import">
-    <input type="url" id="quick_url" placeholder="粘贴网页 / DeepSeek 分享链接，直接生成作品">
+    <input type="text" id="quick_url" placeholder="粘贴网页 / DeepSeek / 豆包链接，或元宝分享文字">
+    <label class="quick-private" title="私密作品只有你自己可见（同一浏览器），公开作品展示在首页"><input type="checkbox" id="quick_private"> 私密</label>
     <button type="button" id="quick_btn">链接一键发布</button>
     <div class="quick-msg" id="quick_msg"></div>
+    <div class="variant-pick" id="variant_pick">
+      <div class="variant-pick-title">选择要发布的内容（对话记录 / 代码作品）：</div>
+      <div id="variant_options"></div>
+      <button type="button" id="variant_confirm">发布选中项</button>
+    </div>
   </div>
   {% if not session.user_id %}
+  <p class="quick-hint">免注册即可发布，链接保留 3 天 · <a href="{{ url_for('register', from='home') }}">注册后永久保存 →</a></p>
+  {% endif %}
+  {% if not session.user_id %}
   <div class="hero-actions">
+    <a href="{{ url_for('new_page') }}" class="btn-hero btn-hero-outline">上传源码</a>
     <a href="{{ url_for('register') }}" class="btn-hero btn-hero-solid">免费注册</a>
     <a href="{{ url_for('login') }}" class="btn-hero btn-hero-outline">已有账号</a>
   </div>
@@ -267,20 +293,20 @@
   {% if pages %}
     {% for page in pages %}
     <div class="card">
-      <div class="card-thumb">
+      <a class="card-thumb" href="{{ url_for('preview', slug=page.slug) }}" title="查看 {{ page.title }}">
         {% if page.html_source %}
         <iframe srcdoc="{{ page.html_source | e }}" sandbox="allow-scripts" loading="lazy"></iframe>
         {% else %}
         <div class="card-thumb-placeholder">🎨</div>
         {% endif %}
-      </div>
+      </a>
       <div class="card-body">
         <a class="card-title" href="{{ url_for('preview', slug=page.slug) }}">{{ page.title }}</a>
         {% if page.description %}
         <p class="card-desc">{{ page.description }}</p>
         {% endif %}
         <div class="card-meta">
-          <span class="card-author">by <strong>{{ page.username }}</strong></span>
+          <span class="card-author">by <strong>{{ page.handle or page.username }}</strong></span>
           <a class="card-link" href="{{ url_for('preview', slug=page.slug) }}">查看 →</a>
         </div>
       </div>
@@ -295,10 +321,28 @@
 </div>
 
 <script>
-  // 首页链接一键发布：导入源码后走隐藏表单提交 /new，复用现有发布链路与审核
+  // 首页链接一键发布：导入后若有多份内容先让用户勾选，再走批量发布；单份走原 /new 路径
   const quickUrl = document.getElementById('quick_url');
   const quickBtn = document.getElementById('quick_btn');
   const quickMsg = document.getElementById('quick_msg');
+  const variantPick = document.getElementById('variant_pick');
+  const variantOptions = document.getElementById('variant_options');
+  let pendingVariants = null;
+
+  function publishSingle(html, title, isPrivate) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/new';
+    [['title', title || '导入的作品'], ['html_source', html],
+     ['description', '从链接导入'], ['is_public', isPrivate ? '0' : '1']].forEach(([k, v]) => {
+      const input = document.createElement('input');
+      input.type = 'hidden'; input.name = k; input.value = v;
+      form.appendChild(input);
+    });
+    document.body.appendChild(form);
+    form.submit();
+  }
+
   quickBtn.addEventListener('click', async () => {
     const url = quickUrl.value.trim();
     if (!url) { quickMsg.textContent = '请先粘贴链接'; quickMsg.className = 'quick-msg err'; return; }
@@ -306,6 +350,7 @@
     quickBtn.textContent = '生成中…';
     quickMsg.textContent = '正在读取链接内容…';
     quickMsg.className = 'quick-msg';
+    variantPick.classList.remove('show');
     try {
       const res = await fetch('/api/import', {
         method: 'POST',
@@ -314,18 +359,40 @@
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || '导入失败');
-      // 构造隐藏表单提交到 /new，保持与手动发布完全一致的处理路径
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = '/new';
-      [['title', data.title || '导入的作品'], ['html_source', data.html],
-       ['description', '从链接导入'], ['is_public', '1']].forEach(([k, v]) => {
-        const input = document.createElement('input');
-        input.type = 'hidden'; input.name = k; input.value = v;
-        form.appendChild(input);
-      });
-      document.body.appendChild(form);
-      form.submit();
+      const variants = data.variants || [];
+      if (variants.length > 1) {
+        // 多份内容：展示勾选面板。同 group 互斥（对话记录两种样式只能选一种），
+        // 每个 group 默认选第一项（对话记录 / 代码作品）
+        pendingVariants = variants;
+        variantOptions.innerHTML = '';
+        const seenGroup = {};
+        variants.forEach((v, i) => {
+          const group = v.group || v.key;
+          const first = !seenGroup[group];
+          seenGroup[group] = true;
+          const label = document.createElement('label');
+          const cb = document.createElement('input');
+          cb.type = 'checkbox'; cb.checked = first; cb.value = String(i);
+          cb.dataset.group = group;
+          cb.addEventListener('change', () => {
+            if (!cb.checked) return;
+            variantOptions.querySelectorAll('input:checked').forEach(o => {
+              if (o !== cb && o.dataset.group === group) o.checked = false;
+            });
+          });
+          const span = document.createElement('span');
+          span.textContent = v.label + '  ';
+          const desc = document.createElement('span');
+          desc.className = 'desc'; desc.textContent = v.description || '';
+          span.appendChild(desc);
+          label.appendChild(cb); label.appendChild(span);
+          variantOptions.appendChild(label);
+        });
+        quickMsg.textContent = '';
+        variantPick.classList.add('show');
+        return;
+      }
+      publishSingle(data.html, data.title, document.getElementById('quick_private').checked);
     } catch (e) {
       quickMsg.textContent = '导入失败：' + e.message;
       quickMsg.className = 'quick-msg err';
@@ -333,6 +400,33 @@
       quickBtn.textContent = '链接一键发布';
     }
   });
+
+  document.getElementById('variant_confirm').addEventListener('click', async () => {
+    if (!pendingVariants) return;
+    const picked = Array.from(variantOptions.querySelectorAll('input:checked'))
+      .map(cb => pendingVariants[Number(cb.value)]);
+    if (!picked.length) { quickMsg.textContent = '请至少选择一份'; quickMsg.className = 'quick-msg err'; return; }
+    const isPrivate = document.getElementById('quick_private').checked;
+    const btn = document.getElementById('variant_confirm');
+    btn.disabled = true; btn.textContent = '发布中…';
+    try {
+      const res = await fetch('/api/publish_batch', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({items: picked.map(v => ({
+          title: v.title, html_source: v.html,
+          description: '从链接导入 · ' + (v.label || ''), is_public: !isPrivate
+        }))})
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || '发布失败');
+      location.href = '/dashboard?trial=1';
+    } catch (e) {
+      quickMsg.textContent = '发布失败：' + e.message;
+      quickMsg.className = 'quick-msg err';
+      btn.disabled = false; btn.textContent = '发布选中项';
+    }
+  });
+
   quickUrl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); quickBtn.click(); }
   });

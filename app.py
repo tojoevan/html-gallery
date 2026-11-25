@@ -311,7 +311,7 @@ def index():
     db = get_db()
     now = datetime.now().isoformat()
     pages = db.execute(
-        '''SELECT p.*, u.username FROM pages p
+        '''SELECT p.*, u.username, u.handle FROM pages p
            JOIN users u ON p.user_id = u.id
            WHERE p.is_public = 1 AND p.review_status = 'approved'
              AND (p.share_expires_at IS NULL OR p.share_expires_at > ?)
@@ -538,6 +538,21 @@ def _check_submission(title, html_source, description):
     return None
 
 
+def _insert_page(title, html_source, description, is_public, db):
+    """创建作品的唯一写入口：/new 与批量发布共用，避免逻辑漂移。"""
+    now = datetime.now().isoformat()
+    slug = unique_slug(title, db, session['user_id'])
+    expiry = _expiry_for(session['user_id'], db)
+    db.execute(
+        '''INSERT INTO pages (user_id,title,slug,html_source,description,is_public,review_status,
+                              share_expires_at,created,updated)
+           VALUES (?,?,?,?,?,?,?,?,?,?)''',
+        (session['user_id'], title, slug, html_source, description, is_public, 'approved',
+         expiry, now, now)
+    )
+    return slug
+
+
 @app.route('/new', methods=['GET', 'POST'])
 @identity_required
 def new_page():
@@ -551,17 +566,8 @@ def new_page():
             return render_template('editor.html', page={'title': title, 'html_source': html_source,
                                                           'description': description, 'is_public': is_public},
                                    mode='new', error=error)
-        now = datetime.now().isoformat()
         db = get_db()
-        slug = unique_slug(title, db, session['user_id'])
-        expiry = _expiry_for(session['user_id'], db)
-        db.execute(
-            '''INSERT INTO pages (user_id,title,slug,html_source,description,is_public,review_status,
-                                  share_expires_at,created,updated)
-               VALUES (?,?,?,?,?,?,?,?,?,?)''',
-            (session['user_id'], title, slug, html_source, description, is_public, 'approved',
-             expiry, now, now)
-        )
+        _insert_page(title, html_source, description, is_public, db)
         db.commit()
         # 动作2：游客创建成功后引导注册（高意向转化窗口）；注册用户直接回看板
         if _is_guest(db, session['user_id']):
@@ -610,24 +616,6 @@ def delete_page(page_id):
 
 # ── Preview ───────────────────────────────────────────────────────────────────
 
-# 注入作品 iframe 的高度上报脚本：无 allow-same-origin，靠 postMessage 上报，
-# 父页面校验 event.source === iframe.contentWindow，安全边界不变。
-HEIGHT_REPORT_JS = '''<script>
-(function(){
-  function send(){
-    try {
-      parent.postMessage({__galleryHeight: Math.max(
-        document.body.scrollHeight, document.documentElement.scrollHeight
-      )}, '*');
-    } catch(e){}
-  }
-  window.addEventListener('load', send);
-  setTimeout(send, 300);
-  if (document.readyState === 'complete') send();
-  if (window.ResizeObserver) new ResizeObserver(send).observe(document.body);
-})();
-</script>'''
-
 def _page_or_403(slug, handle=None):
     db = get_db()
     if handle is None:
@@ -665,7 +653,7 @@ def preview(slug):
     page = _page_or_403(slug)
     return render_template(
         'preview.html', page=page,
-        html_source=page['html_source'] + HEIGHT_REPORT_JS,
+        html_source=page['html_source'],
         current_user_id=session.get('user_id')
     )
 
@@ -705,7 +693,36 @@ def api_import():
     if error:
         return jsonify(ok=False, error=error), 400
     return jsonify(ok=True, html=result['html'], title=result['title'],
-                   source_type=result['source_type'])
+                   source_type=result['source_type'],
+                   variants=result.get('variants'))
+
+
+@app.route('/api/publish_batch', methods=['POST'])
+@identity_required
+def publish_batch():
+    """一次发布多份作品（元宝链接：对话记录 + 代码作品）。复用审核与写入路径。"""
+    payload = request.get_json(silent=True) or {}
+    items = payload.get('items')
+    if not isinstance(items, list) or not items or len(items) > 5:
+        return jsonify(ok=False, error='发布数量无效'), 400
+    # 先全部审核，任一不通过则整批拒绝（避免半批入库）
+    prepared = []
+    for item in items:
+        if not isinstance(item, dict):
+            return jsonify(ok=False, error='发布内容格式错误'), 400
+        title = (item.get('title') or '').strip()[:120] or '未命名'
+        html_source = item.get('html_source') or ''
+        description = (item.get('description') or '').strip()[:500]
+        is_public = 1 if item.get('is_public', True) else 0
+        error = _check_submission(title, html_source, description)
+        if error:
+            return jsonify(ok=False, error=error), 400
+        prepared.append((title, html_source, description, is_public))
+    db = get_db()
+    slugs = [_insert_page(t, h, d, p, db) for t, h, d, p in prepared]
+    db.commit()
+    return jsonify(ok=True, count=len(slugs), slugs=slugs,
+                   is_guest=_is_guest(db, session['user_id']))
 
 
 # ── API: live preview ─────────────────────────────────────────────────────────

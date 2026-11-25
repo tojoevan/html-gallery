@@ -75,9 +75,10 @@
   .card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,.08); }
 
   .card-thumb {
-    width: 100%; aspect-ratio: 16/9;
+    display: block; width: 100%; aspect-ratio: 16/9;
     background: linear-gradient(135deg, #f0f2ff 0%, #e8f4fd 100%);
     overflow: hidden;
+    text-decoration: none; color: inherit;
   }
   .card-thumb iframe {
     width: 200%; height: 200%;
@@ -167,13 +168,14 @@
       <div style="font-size:1.05rem;font-weight:bold;margin-bottom:6px;">🎉 作品已发布！注册后即可永久保存</div>
       <div style="font-size:.9rem;line-height:1.8;margin-bottom:12px;">
         现在注册，享受 <strong>永久链接</strong> + <strong>自定义专属地址</strong> + <strong>评论互动</strong>。<br>
-        当前临时作品的分享链接 3 天后失效（作品不会删除，可续期）；注册后本作品自动转为永久。
+        当前临时作品 3 天后失效（不会删除，可续期）；注册后自动转永久并绑定账号。<br>
+        <span style="color:#a8071a;">私密作品仅当前浏览器可见，清除 Cookie 或换设备将无法找回。</span>
       </div>
       <a href="{{ url_for('register', from='trial') }}" style="display:inline-block;background:#5b6af0;color:#fff;padding:9px 20px;border-radius:7px;text-decoration:none;font-weight:bold;">免费注册，永久保存 →</a>
     </div>
     {% else %}
     <div style="background:#fff7e6;border:1px solid #ffd591;color:#ad4e00;padding:12px 16px;border-radius:8px;margin-bottom:18px;font-size:.92rem;">
-      当前为临时身份，作品分享链接 <strong>3 天后失效</strong>（作品不会删除，可续期）。<a href="{{ url_for('register', from='trial') }}" style="color:#ad4e00;font-weight:bold;">注册即可永久保存 + 自定义链接</a> →
+      当前为临时身份，作品分享链接 <strong>3 天后失效</strong>（不会删除，可续期）；私密作品仅当前浏览器可见，清除 Cookie 后无法找回。<a href="{{ url_for('register', from='trial') }}" style="color:#ad4e00;font-weight:bold;">注册即可永久保存 + 自定义链接</a> →
     </div>
     {% endif %}
   {% endif %}
@@ -182,9 +184,9 @@
   <div class="grid">
     {% for page in pages %}
     <div class="card">
-      <div class="card-thumb">
+      <a class="card-thumb" href="{{ url_for('preview', slug=page.slug) }}" title="查看 {{ page.title }}">
         <iframe srcdoc="{{ page.html_source | e }}" sandbox="allow-scripts" loading="lazy"></iframe>
-      </div>
+      </a>
       <div class="card-body">
         <a class="card-title" href="{{ url_for('preview', slug=page.slug) }}">{{ page.title }}</a>
         <div class="card-meta">

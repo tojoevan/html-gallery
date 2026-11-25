@@ -144,6 +144,20 @@ with app_module.get_db() as db:
 before = moderation.scan('我的作品', '正常描述', '<body>你好世界</body>')
 check('重扫不误伤正常作品', before[0] is False)
 
+# 11. 内置种子词库：通用误伤词不得回潮，明确拒绝词必须保留
+seed_words = set()
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sensitive_words.txt'),
+          encoding='utf-8') as f:
+    for line in f:
+        w = line.strip()
+        if w and not w.startswith('#'):
+            seed_words.add(w)
+false_positives = {'JS', 'LY', 'QQ', 'BT', '网络', '网购', '淘宝', '招聘', '兼职'}
+real_bad = {'淫荡', '冰毒', '炸药', '强暴', '海洛因'}
+check('内置词库无通用误伤词', not (false_positives & seed_words),
+      str(false_positives & seed_words))
+check('内置词库保留明确拒绝词', real_bad <= seed_words, str(real_bad - seed_words))
+
 print('\n=== 汇总 ===')
 passed = sum(1 for _, c, _ in results if c)
 print(f'{passed}/{len(results)} 通过')

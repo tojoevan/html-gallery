@@ -74,6 +74,10 @@
     line-height: 1.6;
   }
   .editor-textarea:focus { outline: none; }
+  .source-tip {
+    padding: .5rem 1rem; font-size: .78rem; color: var(--muted);
+    background: #fafbfc; border-top: 1px solid var(--border); line-height: 1.5;
+  }
   .preview-frame {
     flex: 1; border: none; width: 100%; height: 100%;
     background: #fff;
@@ -92,6 +96,14 @@
   .import-msg { font-size: .8rem; width: 100%; display: none; }
   .import-msg.ok { color: #389e0d; display: block; }
   .import-msg.err { color: #a8071a; display: block; }
+  .variant-pick { width: 100%; display: none; flex-direction: column; gap: .4rem;
+    font-size: .85rem; background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: .6rem .8rem; }
+  .variant-pick.show { display: flex; }
+  .variant-pick label { display: flex; align-items: center; gap: .5rem; cursor: pointer; }
+  .variant-pick label input { flex: none; min-width: 0; width: 15px; height: 15px; padding: 0;
+    border: none; background: transparent; accent-color: var(--accent); }
+  .variant-pick .desc { color: var(--muted); font-size: .78rem; }
+  .variant-pick button { align-self: flex-start; padding: .3rem .7rem; font-size: .8rem; }
 
   .form-actions { margin-top: 1rem; display: flex; gap: .75rem; justify-content: flex-end; }
   .btn {
@@ -167,9 +179,14 @@
           </span>
         </div>
         <div class="import-bar">
-          <input type="url" id="import_url" placeholder="粘贴网页链接或 DeepSeek 分享链接，导入为作品源码">
+          <input type="text" id="import_url" placeholder="粘贴链接或分享文字，导入为作品源码">
           <button type="button" class="btn" id="import_btn">从链接导入</button>
           <div class="import-msg" id="import_msg"></div>
+          <div class="variant-pick" id="variant_pick">
+            <span>选择要编辑的一份（对话记录或代码作品；发布后可再次导入选另一份）：</span>
+            <div id="variant_options"></div>
+            <button type="button" class="btn" id="variant_confirm">载入选中项</button>
+          </div>
         </div>
         <textarea 
           class="editor-textarea" 
@@ -177,6 +194,7 @@
           name="html_source" 
           placeholder="<!DOCTYPE html>&#10;<html>&#10;<head>&#10;  <title>Hello</title>&#10;</head>&#10;<body>&#10;  <h1>Hello World</h1>&#10;</body>&#10;</html>"
         >{{ page.html_source if page else '' }}</textarea>
+        <div class="source-tip">本地图片/CSS 等资源请用网络链接或 base64 内联；相对路径（如 <code>./img.png</code>）在分享页无法加载。</div>
       </div>
       <div class="editor-pane">
         <div class="pane-header">
@@ -243,16 +261,28 @@
     fileInput.value = '';
   });
 
-  // 从链接导入：网页链接直接抓源码，DeepSeek 分享链接提取对话里的 html 代码块
+  // 从链接导入：网页/DeepSeek/元宝分享；多份内容时让用户选一份载入编辑
   const importUrl = document.getElementById('import_url');
   const importBtn = document.getElementById('import_btn');
   const importMsg = document.getElementById('import_msg');
+  const variantPick = document.getElementById('variant_pick');
+  const variantOptions = document.getElementById('variant_options');
+  let pendingVariants = null;
+  const SOURCE_LABEL = {deepseek: 'DeepSeek 分享', yuanbao: '元宝分享'};
+
+  function loadVariant(v) {
+    textarea.value = v.html;
+    if (!titleInput.value.trim()) titleInput.value = v.title || '导入的作品';
+    updatePreview();
+  }
+
   importBtn.addEventListener('click', async () => {
     const url = importUrl.value.trim();
     if (!url) { alert('请先粘贴链接'); return; }
     importBtn.disabled = true;
     importBtn.textContent = '导入中…';
     importMsg.className = 'import-msg';
+    variantPick.classList.remove('show');
     try {
       const res = await fetch('/api/import', {
         method: 'POST',
@@ -261,11 +291,29 @@
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || '导入失败');
+      const variants = data.variants || [];
+      if (variants.length > 1) {
+        pendingVariants = variants;
+        variantOptions.innerHTML = '';
+        variants.forEach((v, i) => {
+          const label = document.createElement('label');
+          const cb = document.createElement('input');
+          cb.type = 'radio'; cb.name = 'variant'; cb.checked = i === 0; cb.value = String(i);
+          const span = document.createElement('span');
+          span.textContent = v.label + '  ';
+          const desc = document.createElement('span');
+          desc.className = 'desc'; desc.textContent = v.description || '';
+          span.appendChild(desc);
+          label.appendChild(cb); label.appendChild(span);
+          variantOptions.appendChild(label);
+        });
+        variantPick.classList.add('show');
+        importMsg.textContent = '';
+        return;
+      }
       if (textarea.value.trim() && !confirm('导入将覆盖当前源码，是否继续？')) return;
-      textarea.value = data.html;
-      if (!titleInput.value.trim()) titleInput.value = data.title || '导入的作品';
-      updatePreview();
-      importMsg.textContent = '已导入 ' + (data.source_type === 'deepseek' ? 'DeepSeek 分享' : '网页') + '内容，请确认后发布';
+      loadVariant({html: data.html, title: data.title});
+      importMsg.textContent = '已导入 ' + (SOURCE_LABEL[data.source_type] || '网页') + '内容，请确认后发布';
       importMsg.className = 'import-msg ok';
     } catch (e) {
       importMsg.textContent = '导入失败：' + e.message;
@@ -274,6 +322,18 @@
       importBtn.disabled = false;
       importBtn.textContent = '从链接导入';
     }
+  });
+
+  document.getElementById('variant_confirm').addEventListener('click', () => {
+    if (!pendingVariants) return;
+    const chosen = variantOptions.querySelector('input[name="variant"]:checked');
+    if (!chosen) return;
+    const v = pendingVariants[Number(chosen.value)];
+    if (textarea.value.trim() && !confirm('载入将覆盖当前源码，是否继续？')) return;
+    loadVariant(v);
+    variantPick.classList.remove('show');
+    importMsg.textContent = '已载入「' + v.label + '」，发布后可再次导入选另一份';
+    importMsg.className = 'import-msg ok';
   });
 </script>
 
