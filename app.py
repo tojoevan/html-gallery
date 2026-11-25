@@ -282,8 +282,14 @@ def _expiry_for(user_id, db):
     return None
 
 
+# ── 过期策略（2026-11-26 明确决策）─────────────────────────────────────────────
+# 过期只影响「对外可见性」（访客 410），**不做任何自动清理**：
+#   1) 作品行、HTML 源码、附件一律留在库里，作者登录后仍能打开、续期、删除；
+#   2) 续期额度用尽也保留，等作者回来认领/注册后转永久；
+#   3) 因此禁止新增基于 share_expires_at 的定时 DELETE / 归档 / 软删任务。
+# 唯一的删除入口是 author 主动删除（/delete/<id>）与删账号级联（/delete_account）。
 def _is_expired(page):
-    """到期判断：NULL 视为永久；坏数据不误伤（视为未到期）。"""
+    """到期判断：NULL 视为永久；坏数据不误伤（视为未到期）。到期≠删除，见上方策略。"""
     raw = page['share_expires_at']
     if not raw:
         return False

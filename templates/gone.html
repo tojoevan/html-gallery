@@ -23,6 +23,9 @@
   a { display: inline-block; padding: 10px 22px; border-radius: 8px;
       background: #5b6af0; color: #fff; text-decoration: none; font-size: .92rem; }
   a:hover { background: #4a58d8; }
+  .owner-tip { margin: 26px 0 0; font-size: .82rem; color: #9aa1ad; line-height: 1.7; }
+  .owner-tip a.inline { display: inline; padding: 0; background: none; color: #5b6af0; font-size: inherit; text-decoration: underline; }
+  .owner-tip a.inline:hover { background: none; color: #4a58d8; }
 </style>
 </head>
 <body>
@@ -31,6 +34,7 @@
     <h1>这个分享链接已失效</h1>
     <p>临时作品的分享有效期为 3 天，链接到期后不再对外展示。<br>作品数据仍然保留，作者可以续期或注册后永久保存。</p>
     <a href="/">返回首页</a>
+    <p class="owner-tip">你是这个作品的作者？回到发布时使用的浏览器，打开<a class="inline" href="/dashboard">我的看板</a>即可续期或删除；作品不会被自动清除。</p>
   </div>
 </body>
 </html>
