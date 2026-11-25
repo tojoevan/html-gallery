@@ -1,6 +1,7 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, abort, flash
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, abort, flash, make_response
 from flask.wrappers import Request as FlaskRequest
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 import sqlite3, os, re, secrets, time, hashlib
 from datetime import datetime, timedelta
 from functools import wraps
@@ -15,7 +16,19 @@ class GalleryRequest(FlaskRequest):
 
 app = Flask(__name__)
 app.request_class = GalleryRequest
-app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-change-in-prod')
+app.secret_key = os.environ.get('SECRET_KEY') or 'dev-secret-change-in-prod'
+if not os.environ.get('SECRET_KEY'):
+    # 兜底值一公开就等于所有人都能伪造 session，生产必须配 .env
+    print('[gallery] WARNING: SECRET_KEY 未配置，正在使用公开的默认值（仅限本地开发）', flush=True)
+# 反向代理：应用只监听 127.0.0.1，nginx 是唯一入口且会带 X-Forwarded-For。
+# 不信任这一跳的话 remote_addr 永远是 127.0.0.1，按 IP 的限流会把全站算成一个人。
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+# 会话保持 30 天：游客发完作品关掉浏览器，第二天回来仍能在看板看到（cookie 是签名的）
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+# 线上由 nginx 强制 https，会话 cookie 加 Secure；本地/测试默认不加，否则 test_client 的 http 请求发不出 cookie
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('GALLERY_HTTPS') == '1'
 # 环境变量可覆盖 instance 目录（测试用；生产不设即用 Flask 默认 instance/）
 INSTANCE_DIR = os.environ.get('GALLERY_INSTANCE', app.instance_path)
 app.instance_path = INSTANCE_DIR
@@ -225,6 +238,13 @@ init_db()
 
 # ── Auth decorator ───────────────────────────────────────────────────────────
 
+@app.before_request
+def _persist_session():
+    """已有身份的会话转成持久 cookie（只转一次，避免每个响应都写 Set-Cookie）。"""
+    if 'user_id' in session and not session.permanent:
+        session.permanent = True
+
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -267,6 +287,7 @@ def _ensure_identity():
     uid = db.execute('SELECT id FROM users WHERE username=?', (username,)).fetchone()['id']
     session['user_id'] = uid
     session['username'] = username
+    session.permanent = True  # 关掉浏览器再回来仍是同一个临时身份
     return uid
 
 
@@ -327,7 +348,13 @@ def _recover_rate_ok(ip):
 
 
 def _recover_hit(ip):
-    _recover_hits.setdefault(ip, []).append(time.time())
+    """记一次失败尝试；异常 IP 过多时顺手清掉过期桶，避免内存无上限增长。"""
+    now = time.time()
+    if len(_recover_hits) > 2000:
+        for k in [k for k, v in _recover_hits.items()
+                  if not v or now - v[-1] > RECOVER_WINDOW]:
+            _recover_hits.pop(k, None)
+    _recover_hits.setdefault(ip, []).append(now)
 
 
 # ── 过期策略（2026-11-26 明确决策）─────────────────────────────────────────────
@@ -484,6 +511,7 @@ def register():
                 db.commit()
                 session['user_id'] = uid
                 session['username'] = username
+                session.permanent = True
                 return redirect(url_for('dashboard'))
         return render_template('auth.html', mode='register', error=error)
     return render_template('auth.html', mode='register')
@@ -498,6 +526,7 @@ def login():
         if user and check_password_hash(user['password'], password):
             session['user_id'] = user['id']
             session['username'] = user['username']
+            session.permanent = True
             next_url = request.args.get('next') or url_for('dashboard')
             # 只允许站内相对路径，防开放重定向（//evil.com 的 netloc 非空会被挡）
             parsed = urlparse(next_url)
@@ -638,7 +667,10 @@ def recovery_code():
     uid = session['user_id']
     if not _is_guest(db, uid):
         return redirect(url_for('dashboard'))
-    return render_template('recovery_code.html', code=_new_recovery_code(db, uid))
+    resp = make_response(render_template('recovery_code.html',
+                                         code=_new_recovery_code(db, uid)))
+    resp.headers['Cache-Control'] = 'no-store'  # 找回码不留在浏览器缓存/历史里的副本
+    return resp
 
 
 @app.route('/recover', methods=['GET', 'POST'])
@@ -651,14 +683,15 @@ def recover():
         if not _recover_rate_ok(ip):
             error = '尝试次数过多，请 10 分钟后再试'
         else:
-            _recover_hit(ip)
             digest = _recovery_hash(request.form.get('code', ''))
             db = get_db()
             row = db.execute('SELECT id, username, is_guest FROM users WHERE recovery_code=?',
                              (digest,)).fetchone() if digest else None
             if not row or not row['is_guest']:
+                _recover_hit(ip)  # 只有失败才计数，成功一次不会占掉别人的额度
                 error = '找回码无效，或对应的临时身份已被注册升级'
             else:
+                _recover_hits.pop(ip, None)
                 # 当前浏览器若是另一个游客且名下有作品，切换后那些作品就不再显示，先告知
                 cur = session.get('user_id')
                 if cur and cur != row['id'] and _is_guest(db, cur):
@@ -666,6 +699,7 @@ def recover():
                                                (cur,)).fetchone())
                 session['user_id'] = row['id']
                 session['username'] = row['username']
+                session.permanent = True
                 url = url_for('dashboard') + '?recovered=1' + ('&switched=1' if switched else '')
                 return redirect(url)
     return render_template('recover.html', error=error)

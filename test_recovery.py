@@ -119,12 +119,27 @@ r = client.post('/recovery-code')
 check('注册用户生成被驳回', r.status_code == 302 and '/dashboard' in r.headers['Location'])
 check('注册用户仍无找回码', user_row(uid=guest['id'])['recovery_code'] is None)
 
-# ── 7. 限流 ──────────────────────────────────────────────────────────────────
+# ── 7. 限流按来源 IP，互不牵连（反代后必须读 X-Forwarded-For）──────────────
 app_module._recover_hits.clear()
+g2 = new_client()
+g2.post('/new', data={'title': 'rate-page', 'html_source': '<body>r</body>', 'visibility': 'public'})
+code3 = re.search(r'id="code">([A-Z0-9-]+)<',
+                  g2.post('/recovery-code').get_data(as_text=True)).group(1)
+
+attacker = new_client()
 for _ in range(app_module.RECOVER_MAX_TRIES):
-    new_client().post('/recover', data={'code': 'AAAA-BBBB-CCCC-DDDD'})
-blocked = new_client().post('/recover', data={'code': code})
-check('超过次数后被限流', blocked.status_code == 200 and '过多' in blocked.get_data(as_text=True))
+    attacker.post('/recover', data={'code': 'AAAA-BBBB-CCCC-DDDD'},
+                  headers={'X-Forwarded-For': '203.0.113.9'})
+blocked = attacker.post('/recover', data={'code': code3},
+                        headers={'X-Forwarded-For': '203.0.113.9'})
+check('同一 IP 失败达上限被限流',
+      blocked.status_code == 200 and '过多' in blocked.get_data(as_text=True))
+
+innocent = new_client().post('/recover', data={'code': code3},
+                             headers={'X-Forwarded-For': '198.51.100.7'})
+check('其他 IP 不受牵连（限流按真实来源）',
+      innocent.status_code == 302 and 'recovered=1' in innocent.headers['Location'],
+      innocent.headers.get('Location', ''))
 app_module._recover_hits.clear()
 
 passed = sum(1 for _, c, _ in results if c)
