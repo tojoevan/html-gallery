@@ -19,6 +19,7 @@
 
 抓取结果不直接入库，由路由层跑 moderation.scan 后才交给前端。
 """
+import base64
 import ipaddress
 import json
 import re
@@ -250,19 +251,69 @@ def _collect_yuanbao_media(node, out):
 # 元宝对话里的附件占位符：[](@replace=media_xxx)，有时带 alt 文字 [文字](@replace=media_xxx)
 _REPLACE_PLACEHOLDER_RE = re.compile(r'\[([^\]]*)\]\(@replace=([^)\s]+)\)')
 
+# 图片内联预算：发布表单上限 3MB，base64 膨胀 4/3，留出正文与转义余量
+INLINE_IMAGE_MAX = 900 * 1024
+INLINE_TOTAL_MAX = 1800 * 1024
+INLINE_IMAGE_TIMEOUT = 10
 
-def _replace_media_placeholders(text, media_map, attachments):
-    """把 [](@replace=media_xxx) 占位符换成附件哨兵，渲染后再还原为带样式的标签。
 
-    未收录的附件、以及残留的占位符一律清除，避免出现原始编码。
+def _inline_yuanbao_images(medias):
+    """下载图片附件并转成 data URI，让作品自包含。
+
+    元宝的图片/附件直链带 COS 签名，过期后作品里的图会全部失效，所以在导入时落库。
+    受发布表单 3MB 上限约束（base64 膨胀 4/3）：单图 900KB、合计 1.8MB 原图。
+    超限或下载失败的图片跳过，渲染时降级为「🖼 图片」标签，不影响其余内容。
     """
+    inline = {}
+    total = 0
+    for item in medias:
+        if item.get('kind') != 'image' or not item.get('url') or not item.get('id'):
+            continue
+        if total >= INLINE_TOTAL_MAX:
+            break
+        budget = min(INLINE_IMAGE_MAX, INLINE_TOTAL_MAX - total)
+        try:
+            # 直链来自页面 JSON，仍属不可信来源，必须走 SSRF 校验
+            assert_public_url(item['url'])
+            req = urllib.request.Request(
+                item['url'], headers={'User-Agent': UA, 'Accept': 'image/*'})
+            with _build_opener().open(req, timeout=INLINE_IMAGE_TIMEOUT) as resp:
+                ctype = (resp.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+                if not ctype.startswith('image/'):
+                    continue
+                raw = resp.read(budget + 1)
+        except LinkImportError:
+            continue
+        except (urllib.error.HTTPError, urllib.error.URLError, socket.timeout,
+                OSError, ValueError):
+            continue
+        if not raw or len(raw) > budget:
+            continue
+        total += len(raw)
+        inline[item['id']] = 'data:%s;base64,%s' % (
+            ctype, base64.b64encode(raw).decode('ascii'))
+    return inline
+
+
+def _replace_media_placeholders(text, media_map, attachments, inline_map=None):
+    """把 [](@replace=media_xxx) 占位符换成附件哨兵，渲染后再还原为图片或标签。
+
+    图片（含 title 为空的）也要保留：元宝的图片附件多数没有文件名，
+    旧逻辑按"无标题"直接丢弃，导致图文对话里图全丢。
+    """
+    inline_map = inline_map or {}
+
     def _sub(m):
-        info = media_map.get(m.group(2).strip()) or {}
+        media_id = m.group(2).strip()
+        info = media_map.get(media_id) or {}
         name = (info.get('title') or '').strip()
+        if info.get('kind') == 'image':
+            attachments.append({'kind': 'image', 'label': name or '图片',
+                                'src': inline_map.get(media_id)})
+            return '\x02ATT%d\x02' % (len(attachments) - 1)
         if not name:
             return m.group(1).strip()
-        icon = '🖼 ' if info.get('kind') == 'image' else '📎 '
-        attachments.append(icon + name)
+        attachments.append({'kind': 'file', 'label': '📎 ' + name})
         return '\x02ATT%d\x02' % (len(attachments) - 1)
     cleaned = _REPLACE_PLACEHOLDER_RE.sub(_sub, text)
     # 兜底：任何残留的 @replace= 占位编码都剔除
@@ -271,9 +322,20 @@ def _replace_media_placeholders(text, media_map, attachments):
 
 def _restore_attachments(html, attachments):
     from html import escape
-    for idx, label in enumerate(attachments):
-        html = html.replace('\x02ATT%d\x02' % idx,
-                            '<span class="attachment">' + escape(label) + '</span>')
+    for idx, item in enumerate(attachments):
+        token = '\x02ATT%d\x02' % idx
+        if isinstance(item, dict) and item.get('kind') == 'image':
+            alt = escape(item.get('label') or '图片')
+            src = item.get('src') or ''
+            if src:
+                html = html.replace(
+                    token, '<img class="att-img" src="' + src + '" alt="' + alt
+                           + '" loading="lazy">')
+            else:
+                html = html.replace(token, '<span class="attachment">🖼 ' + alt + '</span>')
+            continue
+        label = item if isinstance(item, str) else (item.get('label') or '')
+        html = html.replace(token, '<span class="attachment">' + escape(label) + '</span>')
     return html
 
 
@@ -496,6 +558,8 @@ thead th{font-weight:600;color:#3a4050;background:#f8f9fb;white-space:nowrap}
 tbody tr:last-child td{border-bottom:0}
 tbody tr:nth-child(even){background:#fcfcfd}
 img{max-width:100%;height:auto;margin:6px 0;border-radius:10px}
+.att-img{display:block;max-width:100%;height:auto;margin:12px 0;background:#fafbfd;
+border:1px solid #eef0f4;border-radius:12px}
 .attachment{display:inline-flex;align-items:center;gap:4px;padding:3px 11px;
 font-size:13px;font-weight:500;color:#3b4fd8;background:#f4f6ff;
 border:1px solid #dfe5ff;border-radius:999px}
@@ -519,10 +583,11 @@ pre{padding:14px 16px;border-radius:10px}
 '''
 
 
-def _yuanbao_conversation_html(chat, title, source_url):
+def _yuanbao_conversation_html(chat, title, source_url, inline_map=None):
     """对话记录（自有样式）：标题区 + 用户/元宝分段，Markdown 渲染，转义防注入。
 
     不引用元宝站外 CSS/JS —— iframe srcdoc 内跨域样式会被 CORS 拦下导致裸文本。
+    inline_map 为已下载的图片 {media_id: data_uri}，有值时图片直接嵌入页面。
     """
     from html import escape
     convs = [c for c in (chat.get('convs') or [])
@@ -562,7 +627,8 @@ def _yuanbao_conversation_html(chat, title, source_url):
                 raw = block.get('msg') or block.get('text')
                 if not raw:
                     continue
-                raw = _replace_media_placeholders(str(raw), media_map, attachments)
+                raw = _replace_media_placeholders(str(raw), media_map, attachments,
+                                                  inline_map)
                 if raw.strip():
                     texts.append(raw)
         if not texts:
@@ -594,8 +660,13 @@ def _fetch_yuanbao(share_id, original_url):
 
     title = result['title'] or '元宝作品'
 
+    # 附件清单先收集：图片要下载内联，代码文件要取直链
+    medias = []
+    _collect_yuanbao_media(data, medias)
+
     # 变体1：对话记录 —— 自有样式文档页（不引用元宝站外 CSS/JS）
-    dialogue = _yuanbao_conversation_html(chat, title, original_url)
+    dialogue = _yuanbao_conversation_html(
+        chat, title, original_url, _inline_yuanbao_images(medias))
     variants = []
     if dialogue:
         variants.append({'key': 'dialogue', 'group': 'dialogue',
@@ -604,8 +675,6 @@ def _fetch_yuanbao(share_id, original_url):
                          'description': '完整还原问答内容，清晰文档排版'})
 
     # 变体2：从 artifact 取 .html 代码文件直链（有则生成）
-    medias = []
-    _collect_yuanbao_media(data, medias)
     code_items = [x for x in medias
                   if (x['title'].lower().endswith('.html') or x['media_type'] == 'code')
                   and x['url'].lower().startswith(('http://', 'https://'))]

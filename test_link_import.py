@@ -138,6 +138,57 @@ page_att = li._yuanbao_conversation_html(chat_att, '标题', 'https://yb.tencent
 check('附件占位符换成可读标签', 'class="attachment"' in page_att and '海报.html' in page_att)
 check('未知占位符被清除', '@replace=' not in page_att and 'media_zzz' not in page_att)
 check('无控制字符残留', '\x02' not in page_att)
+
+# 图片附件：元宝的图多无文件名，旧逻辑会整张丢掉；且直链带签名会过期，需内联
+class _FakeResp:
+    def __init__(self, body, ctype):
+        self._body = body
+        self.headers = {'Content-Type': ctype}
+
+    def read(self, n=-1):
+        return self._body if n is None or n < 0 else self._body[:n]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+PNG = b'\x89PNG\r\n\x1a\n' + b'0' * 128
+img_media = [{'id': 'media_img', 'title': '', 'media_type': 'image',
+              'kind': 'image', 'url': 'https://userassets.yuanbao.tencent.com/a.png'}]
+with mock.patch.object(li, 'assert_public_url') as ssrf, \
+     mock.patch.object(li, '_build_opener') as op:
+    op.return_value.open.return_value = _FakeResp(PNG, 'image/png')
+    inline = li._inline_yuanbao_images(img_media)
+check('图片内联为 data URI', inline.get('media_img', '').startswith('data:image/png;base64,'))
+check('内联前做了 SSRF 校验', ssrf.called)
+
+chat_img = {'convs': [{'speaker': 'ai', 'speechesV2': [{
+    'content': [{'type': 'text', 'msg': '效果见图 [](@replace=media_img)'}],
+    'extra': {'replaces': [{'id': 'media_img', 'multimedias': [
+        {'title': '', 'mediaType': 'image', 'type': 'image',
+         'url': 'https://userassets.yuanbao.tencent.com/a.png'}]}]}}]}]}
+page_img = li._yuanbao_conversation_html(chat_img, '标题', 'https://yb.tencent.com/s/abc',
+                                         {'media_img': 'data:image/png;base64,QUJD'})
+check('无标题图片不再丢失', '<img class="att-img" src="data:image/png;base64,QUJD"' in page_img)
+check('图片有可读 alt', 'alt="图片"' in page_img)
+page_img_off = li._yuanbao_conversation_html(chat_img, '标题', '')
+check('未内联的图片降级为标签', '🖼 图片' in page_img_off
+      and '<img class="att-img"' not in page_img_off)
+# 非图片响应 / 超过预算 / SSRF 拒绝，一律跳过而不是报错
+with mock.patch.object(li, 'assert_public_url'), \
+     mock.patch.object(li, '_build_opener') as op:
+    op.return_value.open.return_value = _FakeResp(b'<html>', 'text/html')
+    check('非图片 Content-Type 跳过', li._inline_yuanbao_images(img_media) == {})
+with mock.patch.object(li, 'assert_public_url'), \
+     mock.patch.object(li, '_build_opener') as op, \
+     mock.patch.object(li, 'INLINE_IMAGE_MAX', 64):
+    op.return_value.open.return_value = _FakeResp(PNG, 'image/png')
+    check('超出单图预算跳过', li._inline_yuanbao_images(img_media) == {})
+with mock.patch.object(li, 'assert_public_url', side_effect=li.LinkImportError('私有地址')), \
+     mock.patch.object(li, '_build_opener') as op:
+    check('SSRF 拦截时不发请求', li._inline_yuanbao_images(img_media) == {} and not op.called)
 # 端到端：mock 网络，验证双变体 + 主字段代码优先
 # 真实页面会把 < 转义为 \u003c，避免 </script> 提前闭合；测试模拟这一点
 fake_page = '<html><head><title>元宝作品</title></head><body></body>' \
