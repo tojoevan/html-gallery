@@ -121,6 +121,11 @@
   .quick-import button:disabled { opacity: .55; cursor: wait; }
   .quick-private { display: inline-flex; align-items: center; gap: .3rem; font-size: .9rem; color: var(--muted); white-space: nowrap; cursor: pointer; }
   .quick-private input { flex: none; min-width: 0; width: 15px; height: 15px; padding: 0; border: none; background: transparent; accent-color: var(--accent); }
+  .quick-vis {
+    flex: none; padding: .7rem .5rem; border: 1.5px solid var(--border);
+    border-radius: 10px; font-size: .85rem; background: var(--surface); color: var(--text);
+    cursor: pointer;
+  }
   .quick-msg { width: 100%; font-size: .85rem; min-height: 1.2rem; text-align: center; }
   .quick-msg.err { color: #a8071a; }
   .quick-hint { font-size: .85rem; color: var(--muted); margin-top: .2rem; }
@@ -231,6 +236,10 @@
     .nav-links a { padding: .55rem .85rem; font-size: .9rem; }
     .hero { padding: 3rem 1rem 2.5rem; }
     .hero p { font-size: .95rem; }
+    /* 窄屏：输入框独占一行，可见性下拉与发布按钮并排 */
+    .quick-import input { flex: 1 0 100%; }
+    .quick-vis { flex: 1; }
+    #quick_btn { flex: 1; }
     .grid { grid-template-columns: 1fr; padding: 0 1rem 3rem; gap: 1rem; }
     .section-header { padding: 0 1rem 1.25rem; }
   }
@@ -283,7 +292,11 @@
   <p>粘贴链接或源码，一键发布成网页。DeepSeek、豆包、元宝都支持。</p>
   <div class="quick-import">
     <input type="text" id="quick_url" placeholder="粘贴网页链接，或整段分享文字">
-    <label class="quick-private" title="私密作品只有你自己可见（同一浏览器），公开作品展示在首页"><input type="checkbox" id="quick_private"> 私密</label>
+    <select id="quick_vis" class="quick-vis" title="公开：展示在首页；仅链接：不进首页，知道链接即可访问；私密：只有你自己可见">
+      <option value="public">公开</option>
+      <option value="unlisted">仅链接</option>
+      <option value="private">私密</option>
+    </select>
     <button type="button" id="quick_btn">链接一键发布</button>
     <div class="quick-msg" id="quick_msg"></div>
     <div class="variant-pick" id="variant_pick">
@@ -310,7 +323,7 @@
   <ul class="hero-facts">
     <li>网页 / DeepSeek / 豆包 / 元宝</li>
     <li>发布为可交互网页</li>
-    <li>可公开或设私密</li>
+    <li>公开、仅链接或私密</li>
   </ul>
 </div>
 
@@ -364,12 +377,18 @@
   const variantOptions = document.getElementById('variant_options');
   let pendingVariants = null;
 
-  function publishSingle(html, title, isPrivate) {
+  function quickVisibility() {
+    const el = document.getElementById('quick_vis');
+    const v = el ? el.value : 'public';
+    return ['public', 'unlisted', 'private'].includes(v) ? v : 'public';
+  }
+
+  function publishSingle(html, title, visibility) {
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = '/new';
     [['title', title || '导入的作品'], ['html_source', html],
-     ['description', '从链接导入'], ['is_public', isPrivate ? '0' : '1']].forEach(([k, v]) => {
+     ['description', '从链接导入'], ['visibility', visibility]].forEach(([k, v]) => {
       const input = document.createElement('input');
       input.type = 'hidden'; input.name = k; input.value = v;
       form.appendChild(input);
@@ -427,7 +446,7 @@
         variantPick.classList.add('show');
         return;
       }
-      publishSingle(data.html, data.title, document.getElementById('quick_private').checked);
+      publishSingle(data.html, data.title, quickVisibility());
     } catch (e) {
       quickMsg.textContent = '导入失败：' + e.message;
       quickMsg.className = 'quick-msg err';
@@ -441,7 +460,7 @@
     const picked = Array.from(variantOptions.querySelectorAll('input:checked'))
       .map(cb => pendingVariants[Number(cb.value)]);
     if (!picked.length) { quickMsg.textContent = '请至少选择一份'; quickMsg.className = 'quick-msg err'; return; }
-    const isPrivate = document.getElementById('quick_private').checked;
+    const visibility = quickVisibility();
     const btn = document.getElementById('variant_confirm');
     btn.disabled = true; btn.textContent = '发布中…';
     try {
@@ -449,7 +468,7 @@
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({items: picked.map(v => ({
           title: v.title, html_source: v.html,
-          description: '从链接导入 · ' + (v.label || ''), is_public: !isPrivate
+          description: '从链接导入 · ' + (v.label || ''), visibility: visibility
         }))})
       });
       const data = await res.json();

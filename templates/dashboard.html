@@ -185,6 +185,23 @@
     {% endif %}
   {% endif %}
 
+  {% if expiring %}
+  <div style="background:#fff2e8;border:1px solid #ffbb96;color:#ad4e00;padding:14px 16px;border-radius:9px;margin-bottom:18px;font-size:.92rem;">
+    <div style="font-weight:bold;margin-bottom:4px;">
+      ⏰ {{ expiring|length }} 个作品将在 {{ expiring_hours }} 小时内到期
+    </div>
+    <div style="line-height:1.8;margin-bottom:10px;">
+      {{ expiring[:3]|map(attribute='title')|join('、') }}{% if expiring|length > 3 %} 等{% endif %}。
+      到期后链接会失效（内容不会删除），续期可延长 3 天。
+    </div>
+    <form method="post" action="{{ url_for('renew_all_expiring') }}" style="display:inline;">
+      <button type="submit" style="background:#ad4e00;color:#fff;border:none;padding:7px 16px;border-radius:7px;font-size:.9rem;font-weight:500;cursor:pointer;">
+        一键续期全部
+      </button>
+    </form>
+  </div>
+  {% endif %}
+
   {% if pages %}
   <div class="grid">
     {% for page in pages %}
@@ -200,11 +217,18 @@
       <div class="card-body">
         <a class="card-title" href="{{ url_for('preview', slug=page.slug) }}">{{ page.title }}</a>
         <div class="card-meta">
-          <span>{{ '公开' if page.is_public else '私密' }}</span>
+          <span>{{ {'public': '公开', 'unlisted': '仅链接', 'private': '私密'}.get(page.visibility, '公开' if page.is_public else '私密') }}</span>
           {% if page.review_status != 'approved' %}
           <span style="color:#a8071a;">{{ '复审中' if page.review_status == 'pending_review' else '已下架' }}</span>
           {% endif %}
-          {% if page.days_left is not none %}
+          {% if page.hours_left is not none and page.hours_left <= 24 %}
+          <span style="color:#a8071a;font-weight:500;">
+            {% if page.hours_left <= 0 %}已到期{% else %}剩余 {{ page.hours_left }} 小时{% endif %}
+          </span>
+          <form method="post" action="{{ url_for('renew_page', page_id=page.id) }}" style="display:inline;">
+            <button type="submit" style="background:none;border:none;color:#a8071a;cursor:pointer;padding:0;font-size:inherit;font-weight:500;">立即续期</button>
+          </form>
+          {% elif page.days_left is not none %}
           <span style="color:#ad4e00;">剩余 {{ page.days_left }} 天</span>
           <form method="post" action="{{ url_for('renew_page', page_id=page.id) }}" style="display:inline;">
             <button type="submit" style="background:none;border:none;color:#5b6af0;cursor:pointer;padding:0;font-size:inherit;">续期</button>

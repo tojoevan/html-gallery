@@ -203,6 +203,15 @@ def migrate_db():
             db.execute("ALTER TABLE pages ADD COLUMN review_status TEXT NOT NULL DEFAULT 'approved'")
         if 'share_expires_at' not in page_cols:
             db.execute('ALTER TABLE pages ADD COLUMN share_expires_at TEXT')
+        # 可见性三态：public 进画廊 / unlisted 仅持链接可见 / private 仅作者可见
+        # is_public 继续保留并与之同步（=public 时置 1），首页与卡片查询不必改
+        if 'visibility' not in page_cols:
+            db.execute("ALTER TABLE pages ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'")
+            db.execute("UPDATE pages SET visibility = CASE WHEN is_public=1 THEN 'public' ELSE 'private' END")
+        else:
+            # 兜底：写入过 is_public 但未同步 visibility 的历史行
+            db.execute("""UPDATE pages SET visibility = CASE WHEN is_public=1 THEN 'public' ELSE 'private' END
+                          WHERE visibility IS NULL OR visibility NOT IN ('public','unlisted','private')""")
 
 init_db()
 
@@ -278,6 +287,43 @@ def _is_expired(page):
         return datetime.fromisoformat(raw) <= datetime.now()
     except (ValueError, TypeError):
         return False
+
+
+# ── 可见性三态 ────────────────────────────────────────────────────────────────
+VISIBILITIES = ('public', 'unlisted', 'private')
+VIS_LABELS = {'public': '公开', 'unlisted': '仅链接', 'private': '私密'}
+EXPIRY_WARN_HOURS = 24  # 到期前提醒窗口
+
+
+def _visibility(page):
+    """读取可见性，兼容没有该字段的行：is_public 回退为 public/private。"""
+    try:
+        val = page['visibility']
+    except (KeyError, IndexError):
+        val = None
+    if val in VISIBILITIES:
+        return val
+    return 'public' if page['is_public'] else 'private'
+
+
+def _vis_from_form(form):
+    """表单解析：优先 visibility 三态；老表单只有 is_public 复选框。"""
+    vis = (form.get('visibility') or '').strip()
+    if vis in VISIBILITIES:
+        return vis
+    return 'public' if form.get('is_public') else 'private'
+
+
+def _hours_left(page):
+    """距到期的小时数（向上取整，4h59m 显示 5 小时）；永久/坏数据返回 None。"""
+    raw = page['share_expires_at']
+    if not raw:
+        return None
+    try:
+        secs = (datetime.fromisoformat(raw) - datetime.now()).total_seconds()
+    except (ValueError, TypeError):
+        return None
+    return int(-(-secs // 3600))
 
 def slugify(text):
     text = text.lower().strip()
@@ -496,34 +542,74 @@ def dashboard():
     for row in rows:
         item = dict(row)
         item['days_left'] = None
+        item['hours_left'] = None
+        item['visibility'] = _visibility(row)
         if item.get('share_expires_at'):
             try:
                 delta = datetime.fromisoformat(item['share_expires_at']) - datetime.now()
                 item['days_left'] = max(0, delta.days + (1 if delta.total_seconds() > 0 else 0))
             except (ValueError, TypeError):
                 item['days_left'] = None
+            item['hours_left'] = _hours_left(row)
         pages.append(item)
-    return render_template('dashboard.html', pages=pages,
+    # 到期提醒窗口：24 小时内到期（含已过期）的作品
+    expiring = [p for p in pages
+                if p['hours_left'] is not None and p['hours_left'] <= EXPIRY_WARN_HOURS]
+    return render_template('dashboard.html', pages=pages, expiring=expiring,
+                           expiring_hours=EXPIRY_WARN_HOURS,
                            is_admin=_is_admin(session['user_id']),
                            is_guest=_is_guest(db, session['user_id']),
                            trial=bool(request.args.get('trial')),
                            badges=_badges(session['user_id']))
 
 
+def _extend_expiry(user_id, db, page_id):
+    """续期：从现在与现有到期时间中较晚者起算 3 天，避免提前续期反而缩短有效期。"""
+    row = db.execute('SELECT share_expires_at FROM pages WHERE id=?', (page_id,)).fetchone()
+    now = datetime.now()
+    base = now
+    if row and row['share_expires_at']:
+        try:
+            current = datetime.fromisoformat(row['share_expires_at'])
+            if current > base:
+                base = current
+        except (ValueError, TypeError):
+            pass
+    expiry = (base + timedelta(days=TRIAL_DAYS)).isoformat()
+    db.execute('UPDATE pages SET share_expires_at=?, updated=? WHERE id=?',
+               (expiry, now.isoformat(), page_id))
+    return expiry
+
+
 @app.route('/renew/<int:page_id>', methods=['POST'])
 @login_required
 def renew_page(page_id):
-    """匿名作品续期 3 天（从当前时间起算）；注册/管理员作品永久无需续期。"""
+    """匿名作品续期 3 天；注册/管理员作品永久无需续期。"""
     db = get_db()
     page = db.execute('SELECT * FROM pages WHERE id=?', (page_id,)).fetchone()
     if not page or page['user_id'] != session['user_id']:
         abort(403)
     if not page['share_expires_at']:
         return redirect(url_for('dashboard'))
-    expiry = _expiry_for(session['user_id'], db)
-    if expiry:
-        db.execute('UPDATE pages SET share_expires_at=?, updated=? WHERE id=?',
-                   (expiry, datetime.now().isoformat(), page_id))
+    if _expiry_for(session['user_id'], db):
+        _extend_expiry(session['user_id'], db, page_id)
+        db.commit()
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/renew_all', methods=['POST'])
+@login_required
+def renew_all_expiring():
+    """一键续期：把 24 小时内到期的作品统一延后 3 天。"""
+    db = get_db()
+    if _expiry_for(session['user_id'], db):
+        rows = db.execute(
+            'SELECT id, share_expires_at FROM pages WHERE user_id=? AND share_expires_at IS NOT NULL',
+            (session['user_id'],)
+        ).fetchall()
+        for row in rows:
+            if _hours_left(row) is not None and _hours_left(row) <= EXPIRY_WARN_HOURS:
+                _extend_expiry(session['user_id'], db, row['id'])
         db.commit()
     return redirect(url_for('dashboard'))
 
@@ -542,16 +628,21 @@ def _check_submission(title, html_source, description):
     return None
 
 
-def _insert_page(title, html_source, description, is_public, db):
-    """创建作品的唯一写入口：/new 与批量发布共用，避免逻辑漂移。"""
+def _insert_page(title, html_source, description, visibility, db):
+    """创建作品的唯一写入口：/new 与批量发布共用，避免逻辑漂移。
+
+    visibility 为三态 public / unlisted / private。
+    """
     now = datetime.now().isoformat()
     slug = unique_slug(title, db, session['user_id'])
     expiry = _expiry_for(session['user_id'], db)
+    # is_public 与 visibility 同步写：前者维持「进画廊」旧语义，首页查询无需改动
     db.execute(
-        '''INSERT INTO pages (user_id,title,slug,html_source,description,is_public,review_status,
-                              share_expires_at,created,updated)
-           VALUES (?,?,?,?,?,?,?,?,?,?)''',
-        (session['user_id'], title, slug, html_source, description, is_public, 'approved',
+        '''INSERT INTO pages (user_id,title,slug,html_source,description,is_public,visibility,
+                              review_status,share_expires_at,created,updated)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
+        (session['user_id'], title, slug, html_source, description,
+         1 if visibility == 'public' else 0, visibility, 'approved',
          expiry, now, now)
     )
     return slug
@@ -564,14 +655,16 @@ def new_page():
         title = request.form.get('title', '').strip() or '未命名'
         html_source = request.form.get('html_source', '')
         description = request.form.get('description', '').strip()
-        is_public = 1 if request.form.get('is_public') else 0
+        visibility = _vis_from_form(request.form)
         error = _check_submission(title, html_source, description)
         if error:
             return render_template('editor.html', page={'title': title, 'html_source': html_source,
-                                                          'description': description, 'is_public': is_public},
+                                                          'description': description,
+                                                          'visibility': visibility,
+                                                          'is_public': 1 if visibility == 'public' else 0},
                                    mode='new', error=error)
         db = get_db()
-        _insert_page(title, html_source, description, is_public, db)
+        _insert_page(title, html_source, description, visibility, db)
         db.commit()
         # 动作2：游客创建成功后引导注册（高意向转化窗口）；注册用户直接回看板
         if _is_guest(db, session['user_id']):
@@ -590,18 +683,21 @@ def edit_page(page_id):
         title = request.form.get('title', '').strip() or '未命名'
         html_source = request.form.get('html_source', '')
         description = request.form.get('description', '').strip()
-        is_public = 1 if request.form.get('is_public') else 0
+        visibility = _vis_from_form(request.form)
         error = _check_submission(title, html_source, description)
         if error:
             return render_template('editor.html', page=dict(page, title=title, html_source=html_source,
-                                                            description=description, is_public=is_public),
+                                                            description=description,
+                                                            visibility=visibility,
+                                                            is_public=1 if visibility == 'public' else 0),
                                    mode='edit', error=error)
         now = datetime.now().isoformat()
         # 内容变更后已重新扫描通过，恢复审核状态（举报导致的 rejected 也随新内容解除）
         db.execute(
-            '''UPDATE pages SET title=?,html_source=?,description=?,is_public=?,review_status='approved',updated=?
-               WHERE id=?''',
-            (title, html_source, description, is_public, now, page_id)
+            '''UPDATE pages SET title=?,html_source=?,description=?,is_public=?,visibility=?,
+                               review_status='approved',updated=? WHERE id=?''',
+            (title, html_source, description, 1 if visibility == 'public' else 0,
+             visibility, now, page_id)
         )
         db.commit()
         return redirect(url_for('dashboard'))
@@ -639,9 +735,10 @@ def _page_or_403(slug, handle=None):
     # 审核未通过/待复审：对外一律 404（不暴露存在），作者与管理员仍可见
     if page['review_status'] != 'approved' and not (is_owner or is_admin):
         abort(404)
-    if not page['is_public']:
-        if not (is_owner or is_admin):
-            abort(403)
+    # 可见性：private 仅作者/管理员；unlisted 与 public 对外都可访问，
+    # 区别只在是否出现在首页画廊（由 is_public=1 控制，unlisted 时为 0）
+    if _visibility(page) == 'private' and not (is_owner or is_admin):
+        abort(403)
     # 分享有效期：到期后对外 410（数据不删），作者与管理员不受限
     if 'share_expires_at' in page.keys() and _is_expired(page) and not (is_owner or is_admin):
         abort(410)
@@ -655,10 +752,18 @@ def gone(error):
 @app.route('/p/<slug>')
 def preview(slug):
     page = _page_or_403(slug)
+    is_owner = session.get('user_id') == page['user_id']
+    hours_left = _hours_left(page)
     return render_template(
         'preview.html', page=page,
         html_source=page['html_source'],
-        current_user_id=session.get('user_id')
+        current_user_id=session.get('user_id'),
+        is_owner=is_owner,
+        visibility=_visibility(page),
+        # 仅作者看到：即将到期（24h 内）提醒，到期后提示续期
+        expiry_warn=(hours_left if (is_owner and hours_left is not None
+                                    and hours_left <= EXPIRY_WARN_HOURS) else None),
+        expiry_expired=(is_owner and _is_expired(page)),
     )
 
 def _fission_ctx(db, page):
@@ -717,11 +822,14 @@ def publish_batch():
         title = (item.get('title') or '').strip()[:120] or '未命名'
         html_source = item.get('html_source') or ''
         description = (item.get('description') or '').strip()[:500]
-        is_public = 1 if item.get('is_public', True) else 0
+        # 三态可见性；老客户端只传 is_public 时按 public/private 回退
+        vis = (item.get('visibility') or '').strip()
+        if vis not in VISIBILITIES:
+            vis = 'public' if item.get('is_public', True) else 'private'
         error = _check_submission(title, html_source, description)
         if error:
             return jsonify(ok=False, error=error), 400
-        prepared.append((title, html_source, description, is_public))
+        prepared.append((title, html_source, description, vis))
     db = get_db()
     slugs = [_insert_page(t, h, d, p, db) for t, h, d, p in prepared]
     db.commit()

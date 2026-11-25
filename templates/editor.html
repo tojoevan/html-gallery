@@ -59,6 +59,17 @@
   .checkbox-group { display: flex; align-items: center; gap: .5rem; }
   .checkbox-group input { width: 1rem; height: 1rem; }
 
+  /* 可见性三态：公开 / 仅持链接 / 私密 */
+  .vis-group {
+    display: flex; align-items: center; gap: .9rem; flex-wrap: wrap;
+    padding: .5rem .85rem; border: 1.5px solid var(--border);
+    border-radius: 8px; background: #fafbfc;
+  }
+  .vis-caption { font-size: .85rem; font-weight: 500; color: var(--muted); }
+  .vis-opt { display: inline-flex; align-items: center; gap: .4rem; font-size: .9rem; cursor: pointer; white-space: nowrap; }
+  .vis-opt input { width: 1rem; height: 1rem; margin: 0; accent-color: var(--accent); }
+  .vis-opt small { color: var(--muted); font-size: .78rem; }
+
   .editor-main { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; height: calc(100vh - 220px); min-height: 500px; }
   .editor-pane { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
   .pane-header {
@@ -119,6 +130,7 @@
     .form-row { align-items: stretch; }
     .form-group { min-width: 100%; }
     .checkbox-group { width: 100%; flex-wrap: wrap; }
+    .vis-group { width: 100%; }
     .checkbox-group .btn { margin-left: 0 !important; }
   }
   @media (max-width: 640px) {
@@ -160,8 +172,22 @@
         <input type="text" id="description" name="description" placeholder="可选描述" value="{{ page.description if page else '' }}">
       </div>
       <div class="checkbox-group">
-        <input type="checkbox" id="is_public" name="is_public" {% if page and page.is_public or not page %}checked{% endif %}>
-        <label for="is_public">公开可见</label>
+        {% set cur_vis = page.visibility if (page and page.visibility) else ('public' if (not page or page.is_public) else 'private') %}
+        <div class="vis-group">
+          <span class="vis-caption">可见性</span>
+          <label class="vis-opt">
+            <input type="radio" name="visibility" value="public" {% if cur_vis == 'public' %}checked{% endif %}>
+            公开 <small>展示在首页</small>
+          </label>
+          <label class="vis-opt">
+            <input type="radio" name="visibility" value="unlisted" {% if cur_vis == 'unlisted' %}checked{% endif %}>
+            仅持链接 <small>不进首页</small>
+          </label>
+          <label class="vis-opt">
+            <input type="radio" name="visibility" value="private" {% if cur_vis == 'private' %}checked{% endif %}>
+            私密 <small>只有自己可见</small>
+          </label>
+        </div>
         <a href="{{ url_for('dashboard') }}" class="btn" style="margin-left: auto;">取消</a>
         <button type="submit" class="btn btn-primary">{{ '保存修改' if mode == 'edit' else '发布页面' }}</button>
       </div>

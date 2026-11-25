@@ -58,6 +58,10 @@
     font-size: .7rem; color: #92400e; background: #fef3c7;
     padding: .15rem .45rem; border-radius: 4px; white-space: nowrap; flex: none;
   }
+  .nav-unlisted {
+    font-size: .7rem; color: #1e429f; background: #e8f0ff;
+    padding: .15rem .45rem; border-radius: 4px; white-space: nowrap; flex: none;
+  }
   .nav-links { display: flex; gap: .5rem; align-items: center; }
   .nav-links a {
     font-size: .875rem; color: var(--muted); text-decoration: none;
@@ -92,6 +96,19 @@
     border: none;
     background: #fff;
   }
+  /* 作者可见的到期提醒条：占高约 46px，同步压缩 iframe 高度避免出现双滚动 */
+  .expiry-bar {
+    display: flex; align-items: center; justify-content: center; gap: .75rem;
+    flex-wrap: wrap; padding: .6rem 1rem; font-size: .86rem;
+    background: #fffbe6; color: #874d00; border-bottom: 1px solid #ffe58f;
+  }
+  .expiry-bar.expired { background: #fff1f0; color: #a8071a; border-bottom-color: #ffa39e; }
+  .expiry-bar button {
+    background: #874d00; color: #fff; border: none; border-radius: 6px;
+    padding: .32rem .85rem; font-size: .82rem; font-weight: 500; cursor: pointer;
+  }
+  .expiry-bar.expired button { background: #a8071a; }
+  .has-expiry-bar .preview-frame { height: calc(100vh - 46px); }
 
   /* ── Comments ── */
   .comments-section {
@@ -167,7 +184,8 @@
     <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
     <span class="nav-sep"></span>
     <span class="nav-title" title="{{ meta_desc | truncate(110, true, '…') }}">{{ page.title }}</span>
-    {% if not page.is_public %}<span class="nav-private">私密</span>{% endif %}
+    {% if visibility == 'private' %}<span class="nav-private">私密</span>
+    {% elif visibility == 'unlisted' %}<span class="nav-unlisted">仅持链接可见</span>{% endif %}
     <span class="nav-author">by {{ page.username }}</span>
   </div>
   <div class="nav-links">
@@ -191,7 +209,22 @@
   </div>
 </nav>
 
-<div class="preview-container">
+<div class="preview-container{% if expiry_expired or expiry_warn is not none %} has-expiry-bar{% endif %}">
+  {% if expiry_expired %}
+  <div class="expiry-bar expired">
+    <span>此作品分享链接<strong>已过期</strong>，只有你自己能看到。续期后链接恢复访问（内容不会删除）。</span>
+    <form method="post" action="{{ url_for('renew_page', page_id=page.id) }}" style="margin:0;">
+      <button type="submit">续期 3 天</button>
+    </form>
+  </div>
+  {% elif expiry_warn is not none %}
+  <div class="expiry-bar">
+    <span>此作品将在<strong>{% if expiry_warn <= 0 %}不足 1 小时{% else %}{{ expiry_warn }} 小时{% endif %}</strong>后到期，届时分享链接失效（内容保留）。</span>
+    <form method="post" action="{{ url_for('renew_page', page_id=page.id) }}" style="margin:0;">
+      <button type="submit">续期 3 天</button>
+    </form>
+  </div>
+  {% endif %}
   <iframe class="preview-frame" id="previewFrame" srcdoc="{{ html_source | e }}" sandbox="allow-scripts"></iframe>
 </div>
 

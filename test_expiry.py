@@ -156,6 +156,67 @@ before = page_by_title('alice-page')['share_expires_at']
 alice_client.post(f"/renew/{ap['id']}")
 check('注册作品续期无副作用', page_by_title('alice-page')['share_expires_at'] == before)
 
+# ── 7. 可见性三态：公开 / 仅链接 / 私密 ──────────────────────────────────────
+def create_vis(title, visibility):
+    r = client.post('/new', data={'title': title, 'html_source': '<body>v</body>',
+                                  'visibility': visibility})
+    assert r.status_code == 302, f'create failed: {r.status_code}'
+
+
+for vis in ('public', 'unlisted', 'private'):
+    create_vis('vis-' + vis, vis)
+
+pub, unl, pri = (page_by_title('vis-' + v) for v in ('public', 'unlisted', 'private'))
+check('public 写入 is_public=1', pub['visibility'] == 'public' and pub['is_public'] == 1)
+check('unlisted 不入画廊', unl['visibility'] == 'unlisted' and unl['is_public'] == 0)
+check('private 标记正确', pri['visibility'] == 'private' and pri['is_public'] == 0)
+
+visitor = app_module.app.test_client()
+home_all = visitor.get('/').get_data(as_text=True)
+check('首页只有公开作品', 'vis-public' in home_all
+      and 'vis-unlisted' not in home_all and 'vis-private' not in home_all)
+check('仅链接作品持链接可看', visitor.get('/p/vis-unlisted').status_code == 200)
+check('私密作品他人不可见', visitor.get('/p/vis-private').status_code == 403)
+check('作者仍可看自己私密作品', client.get('/p/vis-private').status_code == 200)
+
+edit_html = client.get(f"/edit/{unl['id']}").get_data(as_text=True)
+check('编辑页回填仅链接', 'value="unlisted" checked' in edit_html)
+preview_unl = client.get('/p/vis-unlisted').get_data(as_text=True)
+check('预览页显示仅链接标识', 'nav-unlisted' in preview_unl)
+
+# ── 8. 到期前提醒 + 一键续期 ────────────────────────────────────────────────
+def set_expiry(page_id, delta):
+    c = sqlite3.connect(DB)
+    c.execute('UPDATE pages SET share_expires_at=? WHERE id=?',
+              ((datetime.now() + delta).isoformat(), page_id))
+    c.commit(); c.close()
+
+
+set_expiry(grp['id'], timedelta(hours=5))
+dash_soon = guest_client.get('/dashboard').get_data(as_text=True)
+check('看板出现到期提醒', '个作品将在 24 小时内到期' in dash_soon)
+check('看板提供一键续期', '一键续期全部' in dash_soon)
+check('看板小时数向上取整', '剩余 5 小时' in dash_soon)
+
+owner_preview = guest_client.get('/p/guest-renew').get_data(as_text=True)
+check('作者预览页有到期提醒条', '<div class="expiry-bar">' in owner_preview and '5 小时' in owner_preview)
+visitor_preview = app_module.app.test_client().get('/p/guest-renew').get_data(as_text=True)
+check('访客看不到到期提醒条', '<div class="expiry-bar">' not in visitor_preview)
+
+guest_client.post('/renew_all')
+after = page_by_title('guest-renew')
+left = datetime.fromisoformat(after['share_expires_at']) - datetime.now()
+# 续期从「较晚者」起算：原到期在 5 小时后，续期后应为 3 天 + 5 小时
+check('一键续期延长 3 天', 3.1 < left.days + left.seconds / 86400 < 3.3, f'{left}')
+dash_after = guest_client.get('/dashboard').get_data(as_text=True)
+check('续期后提醒消失', '个作品将在 24 小时内到期' not in dash_after)
+
+# 提前续期不应缩短有效期（从较晚者起算）
+set_expiry(grp['id'], timedelta(hours=30))
+guest_client.post(f"/renew/{grp['id']}")
+kept = datetime.fromisoformat(page_by_title('guest-renew')['share_expires_at']) - datetime.now()
+check('提前续期不缩短有效期', kept.days + kept.seconds / 86400 > 3.5, f'{kept}')
+
 # ── 汇总 ─────────────────────────────────────────────────────────────────────
 passed = sum(1 for _, ok, _ in results if ok)
 print(f'\n==== {passed}/{len(results)} 通过 ====')
