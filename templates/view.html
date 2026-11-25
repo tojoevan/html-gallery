@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{ page.title }}</title>
+{% if visibility in ('unlisted', 'private') %}<meta name="robots" content="noindex,follow">{% endif %}
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,14 +37,45 @@
   }
   .fission-bar a { color: #5b6af0; text-decoration: none; font-weight: 500; }
   .fission-bar a:hover { text-decoration: underline; }
+  /* 作者可见的到期提醒：固定顶部，iframe 同步下移并压缩高度 */
+  .expiry-bar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 9997;
+    display: flex; align-items: center; justify-content: center; gap: .7rem;
+    flex-wrap: wrap; padding: .55rem .9rem; font-size: .82rem;
+    background: #fffbe6; color: #874d00; border-bottom: 1px solid #ffe58f;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  }
+  .expiry-bar.expired { background: #fff1f0; color: #a8071a; border-bottom-color: #ffa39e; }
+  .expiry-bar button {
+    background: #874d00; color: #fff; border: none; border-radius: 6px;
+    padding: .28rem .8rem; font-size: .78rem; font-weight: 500; cursor: pointer;
+  }
+  .expiry-bar.expired button { background: #a8071a; }
+  body.has-expiry-bar .share-frame { height: calc(100vh - 44px); margin-top: 44px; }
   @media (max-width: 600px) {
     .fission-bar { font-size: .72rem; gap: .4rem; padding: .45rem .6rem; flex-wrap: wrap; }
     /* 给底部引导条留出空间，避免遮住作品末尾内容 */
     .share-frame { height: calc(100vh - 42px); }
+    body.has-expiry-bar .share-frame { height: calc(100vh - 86px); }
   }
 </style>
 </head>
-<body>
+<body{% if expiry_expired or expiry_warn is not none %} class="has-expiry-bar"{% endif %}>
+  {% if expiry_expired %}
+  <div class="expiry-bar expired">
+    <span>此作品分享链接<strong>已过期</strong>，访客打不开。续期后可继续分享（内容不会删除）。</span>
+    <form method="post" action="{{ url_for('renew_page', page_id=page.id) }}" style="margin:0;">
+      <button type="submit">续期 3 天</button>
+    </form>
+  </div>
+  {% elif expiry_warn is not none %}
+  <div class="expiry-bar">
+    <span>此作品将在<strong>{% if expiry_warn <= 0 %}不足 1 小时{% else %}{{ expiry_warn }} 小时{% endif %}</strong>后到期，分享链接会失效。</span>
+    <form method="post" action="{{ url_for('renew_page', page_id=page.id) }}" style="margin:0;">
+      <button type="submit">续期 3 天</button>
+    </form>
+  </div>
+  {% endif %}
   <iframe class="share-frame" srcdoc="{{ html_source | e }}" sandbox="allow-scripts"></iframe>
   {% if show_fission %}
   <div class="fission-bar">

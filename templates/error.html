@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>{{ title }} · HTML Gallery</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --bg:#f8f9fb; --surface:#fff; --border:#e8eaed; --text:#1a1a2e; --muted:#8a8fa8; --accent:#5b6af0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 2rem 1.25rem;
+    -webkit-font-smoothing: antialiased;
+  }
+  .brand { font-size: 1.1rem; font-weight: 600; color: var(--text); text-decoration: none; margin-bottom: 2rem; }
+  .brand span { color: var(--accent); }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 2.25rem 1.75rem; max-width: 460px; width: 100%; text-align: center;
+  }
+  .code { font-size: .78rem; letter-spacing: .12em; color: var(--muted); margin-bottom: .75rem; }
+  h1 { font-size: 1.35rem; margin-bottom: .75rem; }
+  p { font-size: .92rem; line-height: 1.8; color: var(--muted); }
+  .actions { margin-top: 1.5rem; display: flex; gap: .6rem; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: .55rem 1.1rem; border-radius: 9px;
+    font-size: .9rem; text-decoration: none; border: 1px solid var(--border);
+    color: var(--text); background: var(--surface);
+  }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn:hover { opacity: .88; }
+</style>
+</head>
+<body>
+  <a class="brand" href="/">HTML<span>Gallery</span></a>
+  <div class="card">
+    <div class="code">ERROR {{ code }}</div>
+    <h1>{{ title }}</h1>
+    <p>{{ message }}</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="/">返回首页</a>
+      {% if show_login %}
+      <a class="btn" href="/login?next={{ request.path | urlencode }}">作者登录</a>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

@@ -217,6 +217,30 @@ guest_client.post(f"/renew/{grp['id']}")
 kept = datetime.fromisoformat(page_by_title('guest-renew')['share_expires_at']) - datetime.now()
 check('提前续期不缩短有效期', kept.days + kept.seconds / 86400 > 3.5, f'{kept}')
 
+# ── 9. 可见性对 API 同样生效（点赞 / 评论 / 举报）────────────────────────────
+bob = app_module.app.test_client()
+bob.post('/register', data={'username': 'bob', 'email': 'bob@test.local',
+                            'password': 'test12345', 'confirm_password': 'test12345',
+                            'handle': 'bob-h'})
+check('私密作品评论列表他人 404', bob.get(f"/api/comments/{pri['id']}").status_code == 404)
+check('私密作品点赞他人 404', bob.post(f"/api/like/{pri['id']}").status_code == 404)
+check('仅链接作品评论列表可读', bob.get(f"/api/comments/{unl['id']}").status_code == 200)
+report_pri = bob.post(f"/api/report/{pri['id']}", json={'reason': 'x'})
+check('私密作品不可被举报', report_pri.status_code == 404, f'{report_pri.status_code}')
+set_expired(pub['id'])
+check('过期作品点赞 404', bob.post(f"/api/like/{pub['id']}").status_code == 404)
+
+# ── 10. 纯净分享页同样有到期提醒与 noindex ──────────────────────────────────
+set_expiry(grp['id'], timedelta(hours=5))
+share_owner = guest_client.get(f"/view/{page_by_title('guest-renew')['slug']}").get_data(as_text=True)
+check('纯净分享页作者有到期条', '<div class="expiry-bar">' in share_owner)
+share_guest = app_module.app.test_client().get(f"/view/{page_by_title('guest-renew')['slug']}").get_data(as_text=True)
+check('纯净分享页访客无到期条', '<div class="expiry-bar">' not in share_guest)
+check('仅链接作品 noindex', 'name="robots" content="noindex' in
+      app_module.app.test_client().get('/p/vis-unlisted').get_data(as_text=True))
+check('公开作品不加 noindex', 'name="robots"' not in
+      app_module.app.test_client().get('/p/vis-public').get_data(as_text=True))
+
 # ── 汇总 ─────────────────────────────────────────────────────────────────────
 passed = sum(1 for _, ok, _ in results if ok)
 print(f'\n==== {passed}/{len(results)} 通过 ====')

@@ -552,10 +552,12 @@ def dashboard():
                 item['days_left'] = None
             item['hours_left'] = _hours_left(row)
         pages.append(item)
-    # 到期提醒窗口：24 小时内到期（含已过期）的作品
+    # 到期提醒窗口：24 小时内到期；已过期的也纳入（提示是「已失效」而不是「将到期」）
     expiring = [p for p in pages
                 if p['hours_left'] is not None and p['hours_left'] <= EXPIRY_WARN_HOURS]
+    expired_count = sum(1 for p in expiring if p['hours_left'] <= 0)
     return render_template('dashboard.html', pages=pages, expiring=expiring,
+                           expired_count=expired_count,
                            expiring_hours=EXPIRY_WARN_HOURS,
                            is_admin=_is_admin(session['user_id']),
                            is_guest=_is_guest(db, session['user_id']),
@@ -716,6 +718,24 @@ def delete_page(page_id):
 
 # ── Preview ───────────────────────────────────────────────────────────────────
 
+def _can_access(page):
+    """与 _page_or_403 同口径的访问判断，供 API 等非渲染路径复用。
+
+    审核未通过 / 私密 / 已过期：作者与管理员不受限，其余一律拒绝。
+    """
+    is_owner = 'user_id' in session and session['user_id'] == page['user_id']
+    is_admin = 'user_id' in session and _is_admin(session['user_id'])
+    if is_owner or is_admin:
+        return True
+    if page['review_status'] != 'approved':
+        return False
+    if _visibility(page) == 'private':
+        return False
+    if 'share_expires_at' in page.keys() and _is_expired(page):
+        return False
+    return True
+
+
 def _page_or_403(slug, handle=None):
     db = get_db()
     if handle is None:
@@ -749,22 +769,52 @@ def gone(error):
     return render_template('gone.html'), 410
 
 
+@app.errorhandler(403)
+def forbidden(error):
+    """私密作品被他人打开：给出可读说明，而不是 Werkzeug 的英文默认页。"""
+    return render_template(
+        'error.html', code=403, title='这是一个私密作品',
+        message='只有作者本人登录后可以查看。如果你是作者，请用发布作品的账号登录。',
+        show_login=True), 403
+
+
+@app.errorhandler(404)
+def not_found(error):
+    return render_template(
+        'error.html', code=404, title='页面不存在',
+        message='链接可能已删除、拼写有误，或作品尚未通过审核。',
+        show_login=False), 404
+
+
+def _owner_expiry_ctx(page):
+    """渲染上下文：可见性 + 仅作者可见的到期提醒。
+
+    /p、/view、/<handle>/<slug> 三个入口共用，避免只有 /p 有提醒、
+    而用户实际分享出去的是 /<handle>/<slug>（纯净分享）那种情况。
+    """
+    is_owner = session.get('user_id') == page['user_id']
+    hours_left = _hours_left(page)
+    expired = _is_expired(page)
+    return {
+        'is_owner': is_owner,
+        'visibility': _visibility(page),
+        'expiry_warn': (hours_left if (is_owner and hours_left is not None
+                                       and hours_left <= EXPIRY_WARN_HOURS) else None),
+        'expiry_expired': is_owner and expired,
+        # 过期作品仅作者可见：作者需要更醒目的提示，访客根本打不开
+    }
+
+
 @app.route('/p/<slug>')
 def preview(slug):
     page = _page_or_403(slug)
-    is_owner = session.get('user_id') == page['user_id']
-    hours_left = _hours_left(page)
     return render_template(
         'preview.html', page=page,
         html_source=page['html_source'],
         current_user_id=session.get('user_id'),
-        is_owner=is_owner,
-        visibility=_visibility(page),
-        # 仅作者看到：即将到期（24h 内）提醒，到期后提示续期
-        expiry_warn=(hours_left if (is_owner and hours_left is not None
-                                    and hours_left <= EXPIRY_WARN_HOURS) else None),
-        expiry_expired=(is_owner and _is_expired(page)),
+        **_owner_expiry_ctx(page)
     )
+
 
 def _fission_ctx(db, page):
     """裂变入口上下文：非作者 + 作者未关闭时显示。"""
@@ -782,7 +832,8 @@ def view(slug):
     """纯净分享视图：只有作品，无顶栏无评论，iframe 独立视口保留作品自身 sticky。"""
     page = _page_or_403(slug)
     ctx = _fission_ctx(get_db(), page)
-    return render_template('view.html', page=page, html_source=page['html_source'], **ctx)
+    return render_template('view.html', page=page, html_source=page['html_source'],
+                           **_owner_expiry_ctx(page), **ctx)
 
 # ── API: 从链接导入作品源码 ──────────────────────────────────────────────────
 # 只抓取并审核后返回前端，不入库；真正发布仍走 /new，复用既有 3MB + 敏感词校验。
@@ -852,8 +903,8 @@ def api_like(page_id):
     if 'user_id' not in session:
         return jsonify({'error': '请先登录'}), 401
     db = get_db()
-    page = db.execute('SELECT id FROM pages WHERE id=?', (page_id,)).fetchone()
-    if not page:
+    page = db.execute('SELECT * FROM pages WHERE id=?', (page_id,)).fetchone()
+    if not page or not _can_access(page):
         return jsonify({'error': '页面不存在'}), 404
     existing = db.execute('SELECT id FROM likes WHERE page_id=? AND user_id=?', (page_id, session['user_id'])).fetchone()
     if existing:
@@ -870,6 +921,9 @@ def api_like(page_id):
 @app.route('/api/likes/<int:page_id>')
 def api_likes(page_id):
     db = get_db()
+    page = db.execute('SELECT * FROM pages WHERE id=?', (page_id,)).fetchone()
+    if not page or not _can_access(page):
+        return jsonify({'error': '页面不存在'}), 404
     count = db.execute('SELECT COUNT(*) as c FROM likes WHERE page_id=?', (page_id,)).fetchone()['c']
     liked = False
     if 'user_id' in session:
@@ -888,8 +942,8 @@ def api_comment(page_id):
     if not content:
         return jsonify({'error': '内容不能为空'}), 400
     db = get_db()
-    page = db.execute('SELECT id, user_id FROM pages WHERE id=?', (page_id,)).fetchone()
-    if not page:
+    page = db.execute('SELECT * FROM pages WHERE id=?', (page_id,)).fetchone()
+    if not page or not _can_access(page):
         return jsonify({'error': '页面不存在'}), 404
     is_author = session['user_id'] == page['user_id']
     status = 'approved' if is_author else 'pending'
@@ -902,8 +956,8 @@ def api_comment(page_id):
 @app.route('/api/comments/<int:page_id>')
 def api_comments(page_id):
     db = get_db()
-    page = db.execute('SELECT user_id FROM pages WHERE id=?', (page_id,)).fetchone()
-    if not page:
+    page = db.execute('SELECT * FROM pages WHERE id=?', (page_id,)).fetchone()
+    if not page or not _can_access(page):
         return jsonify({'error': '页面不存在'}), 404
     is_author = 'user_id' in session and session['user_id'] == page['user_id']
     current_user_id = session.get('user_id')
@@ -996,8 +1050,10 @@ def _badges(user_id):
 @login_required
 def api_report(page_id):
     db = get_db()
-    page = db.execute('SELECT id, user_id, review_status FROM pages WHERE id=?', (page_id,)).fetchone()
-    if not page:
+    page = db.execute('SELECT * FROM pages WHERE id=?', (page_id,)).fetchone()
+    # 可见性/过期先拦（不可见即 404）；复审状态单独判断，重复举报要给出可读提示
+    if not page or (_visibility(page) == 'private' and page['user_id'] != session.get('user_id')) \
+            or (_is_expired(page) and page['user_id'] != session.get('user_id')):
         return jsonify({'error': '页面不存在'}), 404
     if page['user_id'] == session['user_id']:
         return jsonify({'error': '不能举报自己的作品'}), 400
@@ -1070,7 +1126,8 @@ def share(handle, slug):
     """公开分享链接：按公开标识 + 作品后缀定位，不含登录用户名。"""
     page = _page_or_403(slug, handle=handle)
     ctx = _fission_ctx(get_db(), page)
-    return render_template('view.html', page=page, html_source=page['html_source'], **ctx)
+    return render_template('view.html', page=page, html_source=page['html_source'],
+                           **_owner_expiry_ctx(page), **ctx)
 
 if __name__ == '__main__':
     app.run(debug=os.environ.get('FLASK_DEBUG') == '1', port=5050)

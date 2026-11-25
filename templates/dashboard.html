@@ -188,11 +188,17 @@
   {% if expiring %}
   <div style="background:#fff2e8;border:1px solid #ffbb96;color:#ad4e00;padding:14px 16px;border-radius:9px;margin-bottom:18px;font-size:.92rem;">
     <div style="font-weight:bold;margin-bottom:4px;">
+      {% if expired_count == expiring|length %}
+      ⏰ {{ expiring|length }} 个作品的分享链接已失效
+      {% elif expired_count %}
+      ⏰ {{ expiring|length }} 个作品已失效或将在 {{ expiring_hours }} 小时内到期
+      {% else %}
       ⏰ {{ expiring|length }} 个作品将在 {{ expiring_hours }} 小时内到期
+      {% endif %}
     </div>
     <div style="line-height:1.8;margin-bottom:10px;">
       {{ expiring[:3]|map(attribute='title')|join('、') }}{% if expiring|length > 3 %} 等{% endif %}。
-      到期后链接会失效（内容不会删除），续期可延长 3 天。
+      {% if expired_count %}失效的链接访客打不开，续期后立即恢复。{% else %}到期后链接会失效（内容不会删除）。{% endif %}续期可延长 3 天。
     </div>
     <form method="post" action="{{ url_for('renew_all_expiring') }}" style="display:inline;">
       <button type="submit" style="background:#ad4e00;color:#fff;border:none;padding:7px 16px;border-radius:7px;font-size:.9rem;font-weight:500;cursor:pointer;">
