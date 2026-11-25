@@ -159,7 +159,7 @@
     <a href="{{ url_for('new_page') }}" class="btn-primary">+ 新建</a>
     <a href="{{ url_for('index') }}">首页</a>
     <a href="{{ url_for('settings') }}">设置</a>
-    {% if is_admin %}<a href="{{ url_for('admin_review') }}">复审</a>{% endif %}
+    {% if is_admin %}<a href="{{ url_for('admin_review') }}">复审</a><a href="{{ url_for('admin_trash') }}">回收站{% if trash_count %}（{{ trash_count }}）{% endif %}</a>{% endif %}
     <a href="{{ url_for('logout') }}">退出</a>
   </div>
 </nav>
@@ -229,7 +229,7 @@
     </div>
     <div style="line-height:1.8;margin-bottom:10px;">
       {{ expiring[:3]|map(attribute='title')|join('、') }}{% if expiring|length > 3 %} 等{% endif %}。
-      {% if expired_count %}失效的链接访客打不开，续期后立即恢复。{% else %}到期后链接会失效（内容不会删除）。{% endif %}续期可延长 3 天。
+      {% if expired_count %}失效的链接访客打不开，作品会进入管理员回收站等待处理。续期后立即恢复，注册后永久保留。{% else %}到期后链接会失效（内容不会删除），转入管理员回收站。续期可延长 3 天。{% endif %}
     </div>
     <form method="post" action="{{ url_for('renew_all_expiring') }}" style="display:inline;">
       <button type="submit" style="background:#ad4e00;color:#fff;border:none;padding:7px 16px;border-radius:7px;font-size:.9rem;font-weight:500;cursor:pointer;">

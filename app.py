@@ -300,6 +300,18 @@ def identity_required(f):
     return decorated
 
 
+def _delete_pages_cascade(db, page_ids):
+    """删除作品并清掉其点赞/评论/举报，避免留下孤儿行。调用方负责 commit。"""
+    ids = [int(i) for i in page_ids]
+    if not ids:
+        return 0
+    marks = ','.join('?' * len(ids))
+    db.execute('DELETE FROM likes WHERE page_id IN (%s)' % marks, ids)
+    db.execute('DELETE FROM comments WHERE page_id IN (%s)' % marks, ids)
+    db.execute('DELETE FROM reports WHERE page_id IN (%s)' % marks, ids)
+    return db.execute('DELETE FROM pages WHERE id IN (%s)' % marks, ids).rowcount
+
+
 def _expiry_for(user_id, db):
     """游客作品 3 天到期；注册用户与管理员永久（NULL）。"""
     row = db.execute('SELECT is_guest, is_admin FROM users WHERE id=?', (user_id,)).fetchone()
@@ -357,12 +369,13 @@ def _recover_hit(ip):
     _recover_hits.setdefault(ip, []).append(now)
 
 
-# ── 过期策略（2026-11-26 明确决策）─────────────────────────────────────────────
-# 过期只影响「对外可见性」（访客 410），**不做任何自动清理**：
-#   1) 作品行、HTML 源码、附件一律留在库里，作者登录后仍能打开、续期、删除；
-#   2) 续期额度用尽也保留，等作者回来认领/注册后转永久；
-#   3) 因此禁止新增基于 share_expires_at 的定时 DELETE / 归档 / 软删任务。
-# 唯一的删除入口是 author 主动删除（/delete/<id>）与删账号级联（/delete_account）。
+# ── 过期策略（2026-11-26 更新）────────────────────────────────────────────────
+# 过期只影响「对外可见性」（访客 410），**仍不做任何自动删除**：
+#   1) 过期作品进入「回收站」（惰性判定：share_expires_at 已过，不落额外状态字段）；
+#   2) 由管理员在 /admin/trash 人工确认：保留（转永久）或删除（级联清点赞/评论/举报）；
+#   3) 作者续期、注册升级、管理员保留后，作品自动离开回收站；
+#   4) 因此仍禁止新增基于 share_expires_at 的定时 DELETE / 归档 / 软删任务——
+#      删除只能由作者主动操作或管理员在回收站逐条确认。
 def _is_expired(page):
     """到期判断：NULL 视为永久；坏数据不误伤（视为未到期）。到期≠删除，见上方策略。"""
     raw = page['share_expires_at']
@@ -647,10 +660,12 @@ def dashboard():
                 if p['hours_left'] is not None and p['hours_left'] <= EXPIRY_WARN_HOURS]
     expired_count = sum(1 for p in expiring if p['hours_left'] <= 0)
     me = db.execute('SELECT recovery_code FROM users WHERE id=?', (session['user_id'],)).fetchone()
+    is_admin = _is_admin(session['user_id'])
     return render_template('dashboard.html', pages=pages, expiring=expiring,
                            expired_count=expired_count,
                            expiring_hours=EXPIRY_WARN_HOURS,
-                           is_admin=_is_admin(session['user_id']),
+                           is_admin=is_admin,
+                           trash_count=_trash_count(db) if is_admin else 0,
                            is_guest=_is_guest(db, session['user_id']),
                            has_recovery=bool(me and me['recovery_code']),
                            recovered=bool(request.args.get('recovered')),
@@ -875,7 +890,7 @@ def delete_page(page_id):
     page = db.execute('SELECT * FROM pages WHERE id=?', (page_id,)).fetchone()
     if not page or page['user_id'] != session['user_id']:
         abort(403)
-    db.execute('DELETE FROM pages WHERE id=?', (page_id,))
+    _delete_pages_cascade(db, [page_id])
     db.commit()
     return redirect(url_for('dashboard'))
 
@@ -1326,6 +1341,90 @@ def api_report(page_id):
     db.execute("UPDATE pages SET review_status='pending_review' WHERE id=?", (page_id,))
     db.commit()
     return jsonify({'success': True, 'message': '举报已提交，作品进入复审'})
+
+
+# ── 回收站：过期作品待管理员确认保留或删除 ─────────────────────────────────────
+# 入站是惰性判定（share_expires_at 已过即入），不新增状态字段：
+# 作者续期、注册升级、管理员「保留」或「删除」后，作品自然离开列表。
+# 只支持逐条处置，没有定时批量删除——删除必须有人按下去。
+
+def _trash_rows(db):
+    """回收站候选：所有带到期时间的作品（数量很少，逐行用 _is_expired 判定）。"""
+    return db.execute(
+        '''SELECT p.id, p.title, p.slug, p.visibility, p.is_public, p.user_id,
+                  p.share_expires_at, p.created, p.updated, p.renew_count,
+                  length(CAST(p.html_source AS BLOB)) AS size_bytes,
+                  u.handle, u.username, u.is_guest,
+                  (SELECT COUNT(*) FROM likes l WHERE l.page_id=p.id) AS like_count,
+                  (SELECT COUNT(*) FROM comments c WHERE c.page_id=p.id) AS comment_count
+           FROM pages p JOIN users u ON u.id=p.user_id
+           WHERE p.share_expires_at IS NOT NULL
+           ORDER BY p.share_expires_at ASC'''
+    ).fetchall()
+
+
+def _trash_pages(db):
+    """已过期、待在回收站处理的作品，附带过期时长与体积信息。"""
+    now = datetime.now()
+    items = []
+    for row in _trash_rows(db):
+        if not _is_expired(row):
+            continue
+        item = dict(row)
+        item['visibility'] = _visibility(row)
+        try:
+            hours = int((now - datetime.fromisoformat(row['share_expires_at'])).total_seconds() // 3600)
+        except (ValueError, TypeError):
+            hours = None
+        item['expired_hours'] = hours
+        item['expired_days'] = None if hours is None else hours // 24
+        items.append(item)
+    return items
+
+
+def _trash_count(db):
+    """回收站待处理数量（看板入口用，不读 html_source，避免每次看板搬大字段）。"""
+    rows = db.execute('SELECT share_expires_at FROM pages WHERE share_expires_at IS NOT NULL')
+    return sum(1 for r in rows if _is_expired(r))
+
+
+@app.route('/admin/trash')
+@login_required
+def admin_trash():
+    if not _is_admin(session['user_id']):
+        abort(403)
+    return render_template('trash.html', items=_trash_pages(get_db()))
+
+
+@app.route('/admin/trash/<int:page_id>/<action>', methods=['POST'])
+@login_required
+def admin_trash_action(page_id, action):
+    """回收站处置：keep=保留并转永久；delete=级联删除（点赞/评论/举报一并清）。"""
+    if not _is_admin(session['user_id']):
+        return jsonify({'error': '无权限'}), 403
+    if action not in ('keep', 'delete'):
+        return jsonify({'error': '无效操作'}), 400
+    db = get_db()
+    page = db.execute('SELECT id, title, share_expires_at FROM pages WHERE id=?',
+                      (page_id,)).fetchone()
+    if not page:
+        return jsonify({'error': '作品不存在，可能已被作者删除'}), 404
+    if action == 'keep':
+        # 保留 = 转为永久：清空到期时间，作品恢复对外访问（可见性/审核状态不变）
+        db.execute('UPDATE pages SET share_expires_at=NULL, updated=? WHERE id=?',
+                   (datetime.now().isoformat(), page_id))
+        db.commit()
+        app.logger.info('回收站：%s 保留作品 %s《%s》并转永久',
+                        session.get('username'), page_id, page['title'])
+        return jsonify({'success': True, 'message': '已保留，作品转为永久有效'})
+    # 删除前复核：作者可能刚续期，作品已离开回收站，此时不应再删
+    if not _is_expired(page):
+        return jsonify({'error': '该作品已不在回收站（可能已被作者续期），刷新后再看'}), 409
+    _delete_pages_cascade(db, [page_id])
+    db.commit()
+    app.logger.info('回收站：%s 删除作品 %s《%s》',
+                    session.get('username'), page_id, page['title'])
+    return jsonify({'success': True, 'message': '已删除，不可恢复'})
 
 
 @app.route('/admin/review')

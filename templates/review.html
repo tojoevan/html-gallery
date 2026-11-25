@@ -22,7 +22,7 @@
 </style>
 </head>
 <body>
-  <h1>举报复审 <span style="font-size:.85rem;font-weight:normal;"><a href="{{ url_for('dashboard') }}">← 返回</a></span></h1>
+  <h1>举报复审 <span style="font-size:.85rem;font-weight:normal;"><a href="{{ url_for('dashboard') }}">← 返回</a> · <a href="{{ url_for('admin_trash') }}">回收站</a></span></h1>
   {% if not reports %}
     <div class="card empty">暂无待复审举报</div>
   {% else %}

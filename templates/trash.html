@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>回收站 - HTML Gallery</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; background: #f8f9fb; color: #1a1a2e; padding: 2rem 1.25rem; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin-bottom: .4rem; }
+  .sub { font-size: .88rem; color: #8a8fa8; margin-bottom: 1.25rem; }
+  .sub a { color: #5b6af0; text-decoration: none; }
+  .hint {
+    background: #fffbe6; border: 1px solid #ffe58f; color: #874d00;
+    border-radius: 9px; padding: .8rem 1rem; font-size: .87rem; line-height: 1.7;
+    margin-bottom: 1.25rem;
+  }
+  .card { background: #fff; border: 1px solid #e8eaed; border-radius: 10px; padding: 1.1rem 1.2rem; margin-bottom: .9rem; }
+  .card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; margin-bottom: .45rem; }
+  .title { font-weight: 600; word-break: break-word; }
+  .tag { font-size: .72rem; padding: .1rem .45rem; border-radius: 5px; background: #f0f2f7; color: #5b6af0; white-space: nowrap; }
+  .tag.guest { background: #fff2e8; color: #ad4e00; }
+  .tag.private { background: #fff1f0; color: #a8071a; }
+  .meta { font-size: .82rem; color: #8a8fa8; line-height: 1.8; word-break: break-word; }
+  .actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .85rem; align-items: center; }
+  button { padding: .45rem 1rem; border-radius: 7px; border: 1px solid #e8eaed; cursor: pointer; font-size: .85rem; background: #fff; }
+  button:disabled { opacity: .55; cursor: default; }
+  .keep { background: #eef0ff; border-color: #d8dcff; color: #5b6af0; }
+  .remove { background: #fff2f0; border-color: #ffccc7; color: #a8071a; }
+  .view { padding: .45rem .5rem; font-size: .85rem; color: #5b6af0; text-decoration: none; }
+  .done { font-size: .85rem; color: #237804; }
+  .empty { color: #8a8fa8; padding: 2.5rem; text-align: center; background: #fff; border: 1px solid #e8eaed; border-radius: 10px; }
+  @media (max-width: 420px) {
+    body { padding: 1.25rem .9rem; }
+    .card { padding: .95rem; }
+    .actions button { flex: 1 1 auto; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>回收站 <span id="trash-count" style="font-size:.9rem;font-weight:normal;color:#8a8fa8;">{{ items|length }}</span></h1>
+  <div class="sub">
+    <a href="{{ url_for('dashboard') }}">← 返回看板</a>
+    &nbsp;·&nbsp;
+    <a href="{{ url_for('admin_review') }}">举报复审</a>
+  </div>
+
+  <div class="hint">
+    这里只放<strong>已过期</strong>的作品：分享链接对外已失效，源码与附件仍然完整保留。<br>
+    <strong>保留</strong> = 转为永久有效并恢复访问（可见性与审核状态不变）；
+    <strong>删除</strong> = 连同点赞、评论、举报一并清除，<strong>不可恢复</strong>。
+  </div>
+
+  {% if not items %}
+    <div class="empty">回收站是空的，没有待处理的过期作品。</div>
+  {% else %}
+    {% for it in items %}
+    <div class="card" id="trash-{{ it.id }}">
+      <div class="card-head">
+        <span class="title">{{ it.title }}</span>
+        <span class="tag">{{ {'public': '公开', 'unlisted': '仅链接', 'private': '私密'}[it.visibility] }}</span>
+        <span class="tag {% if it.is_guest %}guest{% endif %}">{{ '临时身份' if it.is_guest else '注册用户' }}</span>
+        {% if it.renew_count %} <span class="tag">续期 {{ it.renew_count }} 次</span>{% endif %}
+      </div>
+      <div class="meta">
+        作者 {{ it.handle or it.username }}{% if it.handle and it.username and not it.username.startswith('guest-') and it.username != it.handle %}（账号 {{ it.username }}）{% endif %} · 到期 {{ it.share_expires_at[:16]|replace('T', ' ') }}
+        {% if it.expired_days %}· 已过期 {{ it.expired_days }} 天{% elif it.expired_hours %}· 已过期 {{ it.expired_hours }} 小时{% else %}· 已过期{% endif %}
+        <br>
+        体积 {% if it.size_bytes >= 1048576 %}{{ '%.1f MB' % (it.size_bytes / 1048576) }}{% else %}{{ '%.0f KB' % (it.size_bytes / 1024) }}{% endif %}
+        · 赞 {{ it.like_count }} · 评论 {{ it.comment_count }}
+      </div>
+      <div class="actions">
+        <button class="keep" onclick="act({{ it.id }}, 'keep', this)">保留 · 转永久</button>
+        <button class="remove" onclick="act({{ it.id }}, 'delete', this)">删除</button>
+        <a class="view" href="{{ page_url(it) }}" target="_blank" rel="noopener">查看作品 ↗</a>
+      </div>
+    </div>
+    {% endfor %}
+  {% endif %}
+</div>
+<script>
+  function act(id, action, btn) {
+    if (action === 'delete' && !confirm('删除后不可恢复，作品的点赞与评论会一并清除。确定删除？')) return;
+    btn.disabled = true;
+    fetch('/admin/trash/' + id + '/' + action, { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.success) {
+          var card = document.getElementById('trash-' + id);
+          card.remove();
+          var left = document.querySelectorAll('.card').length;
+          document.getElementById('trash-count').textContent = left;
+          if (!left) { location.reload(); }
+        } else {
+          btn.disabled = false;
+          alert(d.error || '操作失败');
+        }
+      })
+      .catch(function () { btn.disabled = false; alert('网络错误，请重试'); });
+  }
+</script>
+</body>
+</html>
