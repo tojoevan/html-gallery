@@ -191,11 +191,6 @@
     display: flex; align-items: center; justify-content: center;
     font-size: 2.5rem; opacity: .35;
   }
-  .card-thumb-heavy {
-    flex-direction: column; gap: .4rem; font-size: 1.6rem; opacity: 1;
-    background: linear-gradient(135deg, #f4f6ff, #eef7f6); color: var(--muted);
-  }
-  .card-thumb-heavy small { font-size: .72rem; line-height: 1.6; text-align: center; opacity: .9; }
 
   .card-body { padding: 1rem 1.1rem 1.1rem; flex: 1; display: flex; flex-direction: column; }
   .card-title {
@@ -341,13 +336,11 @@
     {% for page in pages %}
     <div class="card">
       <a class="card-thumb" href="{{ page_url(page) }}" title="查看 {{ page.title }}">
-        {# 超过 200KB 不嵌 srcdoc：图文作品内联图片后单页可达 2MB，会把首页拖到数 MB #}
-        {% if page.html_source and page.html_source|length <= 200000 %}
-        <iframe srcdoc="{{ page.html_source | e }}" sandbox="allow-scripts" loading="lazy"></iframe>
-        {% elif page.html_source %}
-        <div class="card-thumb-placeholder card-thumb-heavy">
-          <span>🖼</span><small>图文内容较大<br>点击查看</small>
-        </div>
+        {# 缩略图用独立地址 ?embed=1 懒加载，不再把整份源码内联进首页：
+           大体积作品（内联图片可达 2MB）一样能出真实缩略图，首页 HTML 也不会被撑大 #}
+        {% if page.html_source %}
+        <iframe src="{{ page_url(page, embed=1) }}" sandbox="allow-scripts"
+                loading="lazy" scrolling="no" tabindex="-1"></iframe>
         {% else %}
         <div class="card-thumb-placeholder">🎨</div>
         {% endif %}

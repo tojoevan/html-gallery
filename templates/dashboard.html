@@ -244,11 +244,12 @@
     {% for page in pages %}
     <div class="card">
       <a class="card-thumb" href="{{ page_url(page) }}" title="查看 {{ page.title }}">
-        {# 超过 200KB 不嵌 srcdoc：图文作品内联图片后单页可达 2MB #}
-        {% if page.html_source|length <= 200000 %}
-        <iframe srcdoc="{{ page.html_source | e }}" sandbox="allow-scripts" loading="lazy"></iframe>
+        {# 与首页一致：用 ?embed=1 懒加载，大体积作品也能出真实缩略图 #}
+        {% if page.html_source %}
+        <iframe src="{{ page_url(page, embed=1) }}" sandbox="allow-scripts"
+                loading="lazy" scrolling="no" tabindex="-1"></iframe>
         {% else %}
-        <div class="card-thumb-placeholder"><span>🖼</span><small>图文内容较大<br>点击查看</small></div>
+        <div class="card-thumb-placeholder">🎨</div>
         {% endif %}
       </a>
       <div class="card-body">

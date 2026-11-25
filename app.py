@@ -1128,7 +1128,17 @@ def _owner_expiry_ctx(page):
 def preview(slug):
     page = _page_or_403(slug)
     if page['slug'] != slug:  # 旧链接 / 别名：301 到短码，规范地址只此一份
-        return redirect(url_for('preview', slug=page['slug']), 301)
+        extra = {'embed': 1} if request.args.get('embed') else {}
+        return redirect(url_for('preview', slug=page['slug'], **extra), 301)
+    if request.args.get('embed'):
+        # 首页缩略图专用：只吐作品源码本身，不带站点外壳。
+        # 卡片用 <iframe src="?embed=1"> 而不是内联 srcdoc，首页 HTML 不会随作品体积膨胀，
+        # 也就没有「图文内容较大」的占位卡了。lazy 加载 + 短缓存，重复访问不吃流量。
+        resp = make_response(page['html_source'] or '')
+        resp.headers['Content-Type'] = 'text/html; charset=utf-8'
+        resp.headers['Cache-Control'] = 'public, max-age=600'
+        resp.headers['X-Robots-Tag'] = 'noindex'
+        return resp
     return render_template(
         'preview.html', page=page,
         html_source=page['html_source'],
