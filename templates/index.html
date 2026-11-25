@@ -1,3 +1,4 @@
+{% set nav_active = 'index' %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -261,22 +262,7 @@
 </head>
 <body>
 
-<nav>
-  <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
-  <input type="checkbox" id="nav-toggle" class="nav-toggle-input" aria-label="展开菜单">
-  <label for="nav-toggle" class="nav-toggle-btn" aria-label="菜单">☰</label>
-  <div class="nav-links">
-    {% if session.user_id %}
-      <a href="{{ url_for('new_page') }}" class="btn-primary">+ 新建</a>
-      <a href="{{ url_for('dashboard') }}">我的作品</a>
-      <a href="{{ url_for('settings') }}">设置</a>
-      <a href="{{ url_for('logout') }}">退出</a>
-    {% else %}
-      <a href="{{ url_for('login') }}">登录</a>
-      <a href="{{ url_for('register') }}" class="btn-primary">注册</a>
-    {% endif %}
-  </div>
-</nav>
+{% include '_nav.html' %}
 
 {% with messages = get_flashed_messages() %}
   {% if messages %}
@@ -486,6 +472,8 @@
     if (e.key === 'Enter') { e.preventDefault(); quickBtn.click(); }
   });
 </script>
+
+{% include '_footer.html' %}
 
 </body>
 </html>

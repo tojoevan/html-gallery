@@ -1,3 +1,4 @@
+{% set nav_active = 'review' %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -7,45 +8,101 @@
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; background: #f8f9fb; color: #1a1a2e; padding: 2rem; }
-  h1 { font-size: 1.4rem; margin-bottom: 1.5rem; }
-  .card { background: #fff; border: 1px solid #e8eaed; border-radius: 10px; padding: 1.2rem; margin-bottom: 1rem; }
-  .meta { font-size: .85rem; color: #8a8fa8; margin-bottom: .5rem; }
-  .title { font-weight: 600; margin-bottom: .5rem; }
-  .reason { font-size: .9rem; margin: .6rem 0; }
-  .actions { display: flex; gap: .6rem; margin-top: .8rem; }
-  button { padding: .45rem 1rem; border-radius: 7px; border: 1px solid #e8eaed; cursor: pointer; font-size: .85rem; background: #fff; }
+  :root {
+    --bg: #f8f9fb; --surface: #fff; --border: #e8eaed; --text: #1a1a2e;
+    --muted: #8a8fa8; --accent: #5b6af0; --accent-light: #eef0ff;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh;
+    display: flex; flex-direction: column;
+  }
+  .wrap { max-width: 860px; width: 100%; margin: 0 auto; padding: 2rem 1.25rem 0; flex: 1; }
+  .page-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem; margin-bottom: .5rem; }
+  .page-head h1 { font-size: 1.4rem; }
+  .page-head .count { font-size: .9rem; color: var(--muted); font-weight: normal; }
+  .sub { font-size: .88rem; color: var(--muted); margin-bottom: 1.25rem; }
+  .sub a { color: var(--accent); text-decoration: none; }
+  .hint {
+    background: #fffbe6; border: 1px solid #ffe58f; color: #874d00;
+    border-radius: 9px; padding: .8rem 1rem; font-size: .87rem; line-height: 1.7;
+    margin-bottom: 1.25rem;
+  }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem 1.2rem; margin-bottom: .9rem; }
+  .card-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; margin-bottom: .45rem; }
+  .title { font-weight: 600; word-break: break-word; }
+  .tag { font-size: .72rem; padding: .1rem .45rem; border-radius: 5px; background: #f0f2f7; color: var(--accent); white-space: nowrap; }
+  .meta { font-size: .82rem; color: var(--muted); line-height: 1.8; word-break: break-word; }
+  .reason { font-size: .9rem; margin: .55rem 0 0; padding: .6rem .8rem; background: #fafbfd; border-left: 3px solid #ffccc7; border-radius: 4px; word-break: break-word; }
+  .actions { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: .85rem; align-items: center; }
+  button {
+    padding: .45rem 1rem; border-radius: 7px; border: 1px solid var(--border);
+    cursor: pointer; font-size: .85rem; background: #fff; font-family: inherit;
+  }
+  button:disabled { opacity: .55; cursor: default; }
   .uphold { background: #fff2f0; border-color: #ffccc7; color: #a8071a; }
-  .dismiss { background: #eef0ff; border-color: #d8dcff; color: #5b6af0; }
-  .empty { color: #8a8fa8; padding: 2rem; text-align: center; }
-  a { color: #5b6af0; text-decoration: none; }
+  .dismiss { background: var(--accent-light); border-color: #d8dcff; color: var(--accent); }
+  .view { padding: .45rem .5rem; font-size: .85rem; color: var(--accent); text-decoration: none; }
+  .empty { color: var(--muted); padding: 2.5rem; text-align: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+  @media (max-width: 420px) {
+    .wrap { padding: 1.25rem .9rem 0; }
+    .card { padding: .95rem; }
+    .actions button { flex: 1 1 auto; }
+  }
 </style>
 </head>
 <body>
-  <h1>举报复审 <span style="font-size:.85rem;font-weight:normal;"><a href="{{ url_for('dashboard') }}">← 返回</a> · <a href="{{ url_for('admin_trash') }}">回收站</a></span></h1>
+{% include '_nav.html' %}
+<div class="wrap">
+  <div class="page-head">
+    <h1>举报复审</h1>
+    <span class="count">{{ reports|length }}</span>
+  </div>
+  <div class="sub"><a href="{{ url_for('dashboard') }}">← 返回看板</a></div>
+
+  <div class="hint">
+    这里放用户举报、等待人工判断的作品。作品本身仍在正常访问，处置结果会通知作者。<br>
+    <strong>确认违规</strong> = 下架作品（作者与管理员仍可见）；<strong>驳回举报</strong> = 恢复作品并关闭该举报。
+  </div>
+
   {% if not reports %}
-    <div class="card empty">暂无待复审举报</div>
+    <div class="empty">暂无待复审举报。</div>
   {% else %}
     {% for r in reports %}
     <div class="card" id="report-{{ r.id }}">
-      <div class="title">{{ r.title }} <span class="meta">by {{ r.author }} · 举报人 {{ r.reporter }}</span></div>
-      <div class="meta">举报理由：{{ r.reason or '（未填写）' }} · {{ r.created }}</div>
+      <div class="card-head">
+        <span class="title">{{ r.title }}</span>
+        <span class="tag">举报待处理</span>
+      </div>
+      <div class="meta">作者 {{ r.handle or r.author }} · 举报人 {{ r.reporter }} · {{ r.created[:16]|replace('T', ' ') }}</div>
+      <div class="reason">举报理由：{{ r.reason or '（未填写）' }}</div>
       <div class="actions">
-        <button class="uphold" onclick="review({{ r.id }}, 'reject')">确认违规 · 下架</button>
-        <button class="dismiss" onclick="review({{ r.id }}, 'approve')">驳回举报 · 恢复</button>
-        <a href="{{ page_url(r) }}" target="_blank" style="padding:.45rem .5rem;">查看作品 ↗</a>
+        <button class="uphold" onclick="review({{ r.id }}, 'reject', this)">确认违规 · 下架</button>
+        <button class="dismiss" onclick="review({{ r.id }}, 'approve', this)">驳回举报 · 恢复</button>
+        <a class="view" href="{{ page_url(r) }}" target="_blank" rel="noopener">查看作品 ↗</a>
       </div>
     </div>
     {% endfor %}
   {% endif %}
+</div>
+{% include '_footer.html' %}
 <script>
-  function review(id, action) {
+  function review(id, action, btn) {
+    if (action === 'reject' && !confirm('下架后作品对外不可见（作者与管理员仍可见）。确定下架？')) return;
+    if (btn) btn.disabled = true;
     fetch('/api/review/' + id + '/' + action, { method: 'POST' })
-      .then(r => r.json())
-      .then(d => {
-        if (d.success) { document.getElementById('report-' + id).remove(); }
-        else { alert(d.error || '操作失败'); }
-      });
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.success) {
+          var card = document.getElementById('report-' + id);
+          if (card) card.remove();
+          if (!document.querySelector('.card')) location.reload();
+        } else {
+          if (btn) btn.disabled = false;
+          alert(d.error || '操作失败');
+        }
+      })
+      .catch(function () { if (btn) btn.disabled = false; alert('网络错误，请重试'); });
   }
 </script>
 </body>

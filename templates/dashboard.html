@@ -1,3 +1,4 @@
+{% set nav_active = 'dashboard' %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -151,18 +152,7 @@
 </head>
 <body>
 
-<nav>
-  <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
-  <input type="checkbox" id="nav-toggle" class="nav-toggle-input" aria-label="展开菜单">
-  <label for="nav-toggle" class="nav-toggle-btn" aria-label="菜单">☰</label>
-  <div class="nav-links">
-    <a href="{{ url_for('new_page') }}" class="btn-primary">+ 新建</a>
-    <a href="{{ url_for('index') }}">首页</a>
-    <a href="{{ url_for('settings') }}">设置</a>
-    {% if is_admin %}<a href="{{ url_for('admin_review') }}">复审</a><a href="{{ url_for('admin_trash') }}">回收站{% if trash_count %}（{{ trash_count }}）{% endif %}</a>{% endif %}
-    <a href="{{ url_for('logout') }}">退出</a>
-  </div>
-</nav>
+{% include '_nav.html' %}
 
 <div class="container">
   <div class="page-header">
@@ -299,6 +289,8 @@
   </div>
   {% endif %}
 </div>
+
+{% include '_footer.html' %}
 
 </body>
 </html>

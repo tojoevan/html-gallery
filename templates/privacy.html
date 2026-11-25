@@ -1,3 +1,4 @@
+{% set nav_active = 'privacy' %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -77,18 +78,7 @@
 </head>
 <body>
 
-<nav>
-  <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
-  <div class="nav-links">
-    {% if session.user_id %}
-      <a href="{{ url_for('dashboard') }}">我的作品</a>
-      <a href="{{ url_for('settings') }}">设置</a>
-    {% else %}
-      <a href="{{ url_for('login') }}">登录</a>
-      <a href="{{ url_for('register') }}">注册</a>
-    {% endif %}
-  </div>
-</nav>
+{% include '_nav.html' %}
 
 <div class="wrap">
   <h1>隐私与数据</h1>
@@ -151,6 +141,8 @@
     本说明随功能变化更新 · 有疑问可从 <a href="{{ url_for('index') }}">首页</a> 找到作者
   </p>
 </div>
+
+{% include '_footer.html' %}
 
 </body>
 </html>

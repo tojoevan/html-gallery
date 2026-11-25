@@ -1,3 +1,4 @@
+{% set nav_active = 'settings' %}
 <!doctype html>
 <html lang=zh>
 <head>
@@ -68,18 +69,7 @@
 </head>
 <body>
 
-<nav>
-  <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
-  <input type="checkbox" id="nav-toggle" class="nav-toggle-input" aria-label="展开菜单">
-  <label for="nav-toggle" class="nav-toggle-btn" aria-label="菜单">☰</label>
-  <div class="nav-links">
-    <a href="{{ url_for('new_page') }}" class="btn-primary">+ 新建</a>
-    <a href="{{ url_for('dashboard') }}">我的作品</a>
-    <a href="{{ url_for('index') }}">首页</a>
-    <a href="{{ url_for('settings') }}">设置</a>
-    <a href="{{ url_for('logout') }}">退出</a>
-  </div>
-</nav>
+{% include '_nav.html' %}
 
 <div class="container">
   <h1>用户设置</h1>
@@ -201,6 +191,8 @@
     </form>
   </div>
 </div>
+
+{% include '_footer.html' %}
 
 </body>
 </html>

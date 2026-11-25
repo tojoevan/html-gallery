@@ -1,3 +1,4 @@
+{% set nav_active = 'trash' %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -7,8 +8,13 @@
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; background: #f8f9fb; color: #1a1a2e; padding: 2rem 1.25rem; }
-  .wrap { max-width: 860px; margin: 0 auto; }
+  :root { --bg: #f8f9fb; --surface: #fff; --border: #e8eaed; --text: #1a1a2e;
+          --muted: #8a8fa8; --accent: #5b6af0; --accent-light: #eef0ff; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column;
+  }
+  .wrap { max-width: 860px; width: 100%; margin: 0 auto; padding: 2rem 1.25rem 0; flex: 1; }
   h1 { font-size: 1.4rem; margin-bottom: .4rem; }
   .sub { font-size: .88rem; color: #8a8fa8; margin-bottom: 1.25rem; }
   .sub a { color: #5b6af0; text-decoration: none; }
@@ -33,13 +39,14 @@
   .done { font-size: .85rem; color: #237804; }
   .empty { color: #8a8fa8; padding: 2.5rem; text-align: center; background: #fff; border: 1px solid #e8eaed; border-radius: 10px; }
   @media (max-width: 420px) {
-    body { padding: 1.25rem .9rem; }
+    .wrap { padding: 1.25rem .9rem 0; }
     .card { padding: .95rem; }
     .actions button { flex: 1 1 auto; }
   }
 </style>
 </head>
 <body>
+{% include '_nav.html' %}
 <div class="wrap">
   <h1>回收站 <span id="trash-count" style="font-size:.9rem;font-weight:normal;color:#8a8fa8;">{{ items|length }}</span></h1>
   <div class="sub">
@@ -69,7 +76,7 @@
         作者 {{ it.handle or it.username }}{% if it.handle and it.username and not it.username.startswith('guest-') and it.username != it.handle %}（账号 {{ it.username }}）{% endif %} · 到期 {{ it.share_expires_at[:16]|replace('T', ' ') }}
         {% if it.expired_days %}· 已过期 {{ it.expired_days }} 天{% elif it.expired_hours %}· 已过期 {{ it.expired_hours }} 小时{% else %}· 已过期{% endif %}
         <br>
-        体积 {% if it.size_bytes >= 1048576 %}{{ '%.1f MB' % (it.size_bytes / 1048576) }}{% else %}{{ '%.0f KB' % (it.size_bytes / 1024) }}{% endif %}
+        体积 {% if it.size_bytes >= 1048576 %}{{ '%.1f MB' % (it.size_bytes / 1048576) }}{% elif it.size_bytes >= 1024 %}{{ '%.0f KB' % (it.size_bytes / 1024) }}{% else %}{{ it.size_bytes }} B{% endif %}
         · 赞 {{ it.like_count }} · 评论 {{ it.comment_count }}
       </div>
       <div class="actions">
@@ -81,6 +88,7 @@
     {% endfor %}
   {% endif %}
 </div>
+{% include '_footer.html' %}
 <script>
   function act(id, action, btn) {
     if (action === 'delete' && !confirm('删除后不可恢复，作品的点赞与评论会一并清除。确定删除？')) return;

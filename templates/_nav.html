@@ -1,0 +1,72 @@
+{# 全站统一顶部导航（自包含样式，不依赖各页 CSS）
+   页面通过 nav_active 高亮当前项：index / dashboard / settings / review / trash
+   nav_is_admin、nav_trash_count 由 app.py 的 context processor 注入 #}
+<style>
+  .site-nav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(255,255,255,.88);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border, #e8eaed);
+    box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    padding: 0 2rem; height: 60px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  }
+  .site-nav-brand {
+    font-size: 1.1rem; font-weight: 600; color: var(--text, #1a1a2e);
+    text-decoration: none; letter-spacing: -.3px; line-height: 1; white-space: nowrap;
+  }
+  .site-nav-brand span { color: var(--accent, #5b6af0); }
+  .site-nav-links { display: flex; gap: .35rem; align-items: center; }
+  .site-nav-toggle-input, .site-nav-toggle-btn { display: none; }
+  .site-nav-links a {
+    font-size: .875rem; color: var(--muted, #8a8fa8); text-decoration: none;
+    padding: .4rem .8rem; border-radius: 8px; transition: all .15s; white-space: nowrap;
+  }
+  .site-nav-links a:hover { color: var(--text, #1a1a2e); background: var(--bg, #f8f9fb); }
+  .site-nav-links a.on { color: var(--accent, #5b6af0); background: var(--accent-light, #eef0ff); font-weight: 500; }
+  .site-nav-links a.site-nav-cta {
+    background: var(--accent, #5b6af0); color: #fff;
+    padding: .4rem .95rem; font-weight: 500;
+  }
+  .site-nav-links a.site-nav-cta:hover { background: #4a5ad4; color: #fff; }
+  @media (max-width: 720px) {
+    .site-nav { padding: 0 1rem; position: relative; }
+    .site-nav-toggle-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 38px; height: 38px; font-size: 1.25rem;
+      color: var(--text, #1a1a2e); cursor: pointer;
+    }
+    .site-nav-links {
+      display: none; position: absolute; top: 60px; right: 1rem;
+      flex-direction: column; align-items: stretch; gap: .15rem;
+      min-width: 170px; padding: .5rem;
+      background: var(--surface, #fff); border: 1px solid var(--border, #e8eaed);
+      border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
+    }
+    .site-nav-toggle-input:checked ~ .site-nav-links { display: flex; }
+    .site-nav-links a { padding: .55rem .85rem; font-size: .9rem; }
+  }
+</style>
+<nav class="site-nav">
+  <a class="site-nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
+  <input type="checkbox" id="site-nav-toggle" class="site-nav-toggle-input" aria-label="展开菜单">
+  <label for="site-nav-toggle" class="site-nav-toggle-btn" aria-label="菜单">☰</label>
+  <div class="site-nav-links">
+    {% if session.user_id %}
+      <a class="site-nav-cta" href="{{ url_for('new_page') }}">+ 新建</a>
+      <a href="{{ url_for('index') }}"{% if nav_active == 'index' %} class="on"{% endif %}>首页</a>
+      <a href="{{ url_for('dashboard') }}"{% if nav_active == 'dashboard' %} class="on"{% endif %}>我的作品</a>
+      <a href="{{ url_for('settings') }}"{% if nav_active == 'settings' %} class="on"{% endif %}>设置</a>
+      {% if nav_is_admin %}
+      <a href="{{ url_for('admin_review') }}"{% if nav_active == 'review' %} class="on"{% endif %}>复审</a>
+      <a href="{{ url_for('admin_trash') }}"{% if nav_active == 'trash' %} class="on"{% endif %}>回收站{% if nav_trash_count %}<span style="opacity:.75;">（{{ nav_trash_count }}）</span>{% endif %}</a>
+      {% endif %}
+      <a href="{{ url_for('logout') }}">退出</a>
+    {% else %}
+      <a href="{{ url_for('recover') }}">找回码</a>
+      <a href="{{ url_for('login') }}">登录</a>
+      <a class="site-nav-cta" href="{{ url_for('register') }}">注册</a>
+    {% endif %}
+  </div>
+</nav>

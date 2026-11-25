@@ -1091,6 +1091,20 @@ def not_found(error):
         show_login=False), 404
 
 
+@app.context_processor
+def inject_nav_ctx():
+    """统一导航所需上下文：是否管理员、回收站待处理数（仅管理员才查）。"""
+    uid = session.get('user_id')
+    is_admin = bool(uid and _is_admin(uid))
+    count = 0
+    if is_admin:
+        try:
+            count = _trash_count(get_db())
+        except Exception:
+            count = 0
+    return dict(nav_is_admin=is_admin, nav_trash_count=count)
+
+
 @app.template_global()
 def page_url(page, **kwargs):
     """作品页面链接：新作品是全局唯一短码，裸 /p/<code> 即可定位（最短）；

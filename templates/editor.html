@@ -1,3 +1,4 @@
+{% set nav_active = 'editor' %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -140,13 +141,7 @@
 </head>
 <body>
 
-<nav>
-  <a class="nav-brand" href="{{ url_for('index') }}">HTML<span>Gallery</span></a>
-  <div class="nav-links">
-    <a href="{{ url_for('dashboard') }}">我的作品</a>
-    <a href="{{ url_for('index') }}">首页</a>
-  </div>
-</nav>
+{% include '_nav.html' %}
 
 <div class="container">
   <div class="editor-header">
