@@ -444,6 +444,35 @@ def _publish_rate_ok(ip):
     return True
 
 
+# ── 链接导入频率限制（2026-11-27）────────────────────────────────────────────
+# /api/import 会同步抓取外部 URL（单次最长 12s，还会内联图片）。gunicorn 单 worker，
+# 匿名并发慢请求即可占满 worker 造成全站不可用。独立计数，不与发布额度互相挤占。
+IMPORT_MINUTE_MAX = int(os.environ.get('GALLERY_IMPORT_PER_MIN', '10'))
+IMPORT_HOUR_MAX = int(os.environ.get('GALLERY_IMPORT_PER_HOUR', '60'))
+IMPORT_RATE_ENABLED = os.environ.get('GALLERY_IMPORT_RATE', '1') != '0'
+_import_hits = {}  # ip -> [时间戳]
+
+
+def _import_rate_ok(ip):
+    """检查导入限流并记录一次成功调用；返回 False 表示应拒绝（429）。"""
+    if app.config.get('TESTING') or not IMPORT_RATE_ENABLED:
+        return True
+    now = time.time()
+    hits = [t for t in _import_hits.get(ip, []) if now - t < 3600]
+    if sum(1 for t in hits if now - t < 60) >= IMPORT_MINUTE_MAX:
+        _import_hits[ip] = hits
+        return False
+    if len(hits) >= IMPORT_HOUR_MAX:
+        _import_hits[ip] = hits
+        return False
+    hits.append(now)
+    _import_hits[ip] = hits
+    if len(_import_hits) > 2000:
+        for k in [k for k, v in _import_hits.items() if not v or now - v[-1] > 3600]:
+            _import_hits.pop(k, None)
+    return True
+
+
 # ── 过期策略（2026-11-26 更新）────────────────────────────────────────────────
 # 过期只影响「对外可见性」（访客 410），**仍不做任何自动删除**：
 #   1) 过期作品进入「回收站」（惰性判定：share_expires_at 已过，不落额外状态字段）；
@@ -1467,7 +1496,11 @@ def view(slug):
 # 只抓取并审核后返回前端，不入库；真正发布仍走 /new，复用既有 3MB + 敏感词校验。
 
 @app.route('/api/import', methods=['POST'])
+@identity_required
 def api_import():
+    # 限流在抓取之前，避免慢请求堆积占满单 worker；身份由 identity_required 建立。
+    if not _import_rate_ok(request.remote_addr or ''):
+        return jsonify(ok=False, error='导入太频繁，请稍后再试'), 429
     url = request.form.get('url', '')
     if not url:
         payload = request.get_json(silent=True) or {}
