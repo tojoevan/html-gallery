@@ -20,6 +20,7 @@
 抓取结果不直接入库，由路由层跑 moderation.scan 后才交给前端。
 """
 import base64
+import http.client
 import ipaddress
 import json
 import re
@@ -63,8 +64,13 @@ def _ip_is_public(ip_text):
                 or ip.is_multicast or ip.is_reserved or ip.is_unspecified)
 
 
-def assert_public_url(url):
-    """校验 URL 的 scheme/host/port 与解析出的所有 IP；不安全即抛错。"""
+def _resolve_public_ips(url):
+    """校验 URL 的 scheme/host/port，返回 (host, port, 公网 IP 列表)。
+
+    与原 assert_public_url 的校验口径一致，但额外把解析出的 IP 返回，
+    供连接阶段直接 pin（见 _Pinned*Connection），消除「校验一次、连接
+    再解析一次」之间的 DNS 重绑定窗口。
+    """
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme.lower() not in ('http', 'https'):
         raise LinkImportError('仅支持 http / https 链接')
@@ -85,7 +91,7 @@ def assert_public_url(url):
         ipaddress.ip_address(host)
         if not _ip_is_public(host):
             raise LinkImportError('不允许访问内网或本地地址')
-        return
+        return host, port, [host]
     except ValueError:
         pass  # 域名，继续 DNS 解析
 
@@ -93,20 +99,89 @@ def assert_public_url(url):
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except socket.gaierror:
         raise LinkImportError('域名无法解析')
-    if not infos or not all(_ip_is_public(info[4][0]) for info in infos):
-        raise LinkImportError('域名解析到非公网地址，已拒绝')
+    ips = []
+    for info in infos:
+        ip = info[4][0]
+        if not _ip_is_public(ip):
+            raise LinkImportError('域名解析到非公网地址，已拒绝')
+        ips.append(ip)
+    if not ips:
+        raise LinkImportError('域名无法解析')
+    return host, port, ips
+
+
+def assert_public_url(url):
+    """校验 URL 的 scheme/host/port 与解析出的所有 IP；不安全即抛错。"""
+    _resolve_public_ips(url)
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """TCP 连到校验阶段 pin 住的公网 IP；Host/证书/SNI 仍用原域名。
+
+    http.client 的 connect() 走 self._create_connection((host, port), ...)，
+    而 _create_connection 是实例属性、通常指向 socket.create_connection。
+    这里把它换成只连 pinned_ip 的版本——socket.create_connection 收到的是
+    IP 字面量，不会再触发 DNS 解析，从而杜绝 DNS 重绑定。TLS 层由父类
+    HTTPSConnection 用 self.host（原域名）做 SNI 与证书校验，不受影响。
+    """
+
+    def __init__(self, host, pinned_ip, port=None, **kwargs):
+        super().__init__(host, port, **kwargs)
+        self._pinned_ip = pinned_ip
+        self._create_connection = self._connect_pinned
+
+    def _connect_pinned(self, address, timeout, source_address=None):
+        return socket.create_connection((self._pinned_ip, address[1]),
+                                        timeout, source_address)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS 版 pin 连接：TLS wrap 的 server_hostname 仍是原域名（证书校验有效）。"""
+
+    def __init__(self, host, pinned_ip, port=None, **kwargs):
+        super().__init__(host, port, **kwargs)
+        self._pinned_ip = pinned_ip
+        self._create_connection = self._connect_pinned
+
+    def _connect_pinned(self, address, timeout, source_address=None):
+        return socket.create_connection((self._pinned_ip, address[1]),
+                                        timeout, source_address)
+
+
+class _PinnedHTTPHandler(urllib.request.HTTPHandler):
+    """每次连接前解析 + 校验 + pin IP，再把连接交给 pin 版 Connection。"""
+
+    def http_open(self, req):
+        host, port, ips = _resolve_public_ips(req.full_url)
+        return self.do_open(
+            lambda h, **kw: _PinnedHTTPConnection(h, ips[0], port, **kw), req)
+
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        host, port, ips = _resolve_public_ips(req.full_url)
+        return self.do_open(
+            lambda h, **kw: _PinnedHTTPSConnection(h, ips[0], port, **kw),
+            req, context=self._context)
 
 
 class _SafeRedirect(urllib.request.HTTPRedirectHandler):
-    """每一跳重定向都重新做 SSRF 校验，防 http://公网 → http://内网。"""
+    """每一跳重定向都重新解析 + 校验 + pin，防 http://公网 → http://内网。
+
+    重定向产生的后续请求同样走 opener，会再次经过 _Pinned*Handler，
+    因此每一跳都重新做 SSRF 校验且用当跳解析出的公网 IP 建连。
+    """
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        assert_public_url(newurl)
+        _resolve_public_ips(newurl)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def _build_opener():
-    return urllib.request.build_opener(_SafeRedirect())
+    # 用 pin 版 handler 取代默认 HTTPHandler/HTTPSHandler：
+    # 它们在 build_opener 中是默认类的子类，会自动替换默认 handler。
+    return urllib.request.build_opener(_SafeRedirect(), _PinnedHTTPHandler(),
+                                       _PinnedHTTPSHandler())
 
 
 def _read_response(resp):
