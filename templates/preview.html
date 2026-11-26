@@ -324,7 +324,7 @@
       list.innerHTML = d.comments.map(c => `
         <div class="comment-item ${c.status}">
           <div class="meta">
-            <span class="author">${c.username || '匿名'}</span>
+            <span class="author">${escapeHtml(c.username || '匿名')}</span>
             <span class="time">${new Date(c.created).toLocaleString('zh-CN')}</span>
           </div>
           <div class="content">${escapeHtml(c.content)}</div>
