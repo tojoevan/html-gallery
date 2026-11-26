@@ -574,6 +574,18 @@ def index():
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 
+# 保留用户名：禁止注册，防抢注提权（tojoevan 会被 migrate_db 自动置为管理员）
+# 与功能/系统账号混淆（admin、support 等）。大小写不敏感比对。
+RESERVED_USERNAMES = {
+    'tojoevan',                                             # 项目所有者（自动管理员）
+    'admin', 'administrator', 'root', 'superuser', 'sysadmin',
+    'system', 'sys', 'support', 'service', 'webmaster', 'postmaster',
+    'noreply', 'no-reply', 'contact', 'info', 'help', 'team',
+    'api', 'www', 'web', 'mail', 'bot', 'gallery', 'official',
+    'guest', 'anonymous', 'test', 'demo', 'null', 'undefined',
+}
+
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -585,6 +597,8 @@ def register():
         error = None
         if not username or len(username) < 2:
             error = '用户名至少 2 个字符'
+        elif username.lower() in RESERVED_USERNAMES:
+            error = '该用户名是系统保留字，请换一个'
         elif not email:
             error = '请填写邮箱'
         elif not password or len(password) < 6:

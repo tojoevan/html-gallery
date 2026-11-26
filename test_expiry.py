@@ -108,13 +108,16 @@ check('注册作品无到期时间（永久）', ap and ap['share_expires_at'] i
 # 注意：migrate_db 的 tojoevan 置位只在启动跑，临时库此时用户尚未创建，
 # 因此手动置位以模拟线上「迁移时已存在」的真实状态。
 admin_client = app_module.app.test_client()
-admin_client.post('/register', data={
-    'username': 'tojoevan', 'email': 'admin@test.local',
-    'password': 'test12345', 'confirm_password': 'test12345', 'handle': 'tojoevan'
-})
+# tojoevan 已是保留用户名，不能走注册接口；直接插库模拟「迁移时已存在」的管理员。
 c = sqlite3.connect(DB)
-c.execute("UPDATE users SET is_admin=1 WHERE username='tojoevan'")
+from werkzeug.security import generate_password_hash as _gph
+c.execute('INSERT INTO users (username,email,password,created,handle,is_admin,is_guest) '
+          'VALUES (?,?,?,?,?,?,0)',
+          ('tojoevan', 'admin@test.local', _gph('test12345'),
+           '2026-01-01T00:00:00', 'tojoevan', 1))
 c.commit(); c.close()
+# 让该客户端以管理员身份登录（走真实登录接口，而非抄近路改 session）
+admin_client.post('/login', data={'username': 'tojoevan', 'password': 'test12345'})
 admin_client.post('/new', data={'title': 'admin-page', 'html_source': '<body>x</body>', 'is_public': '1'})
 adminp = page_by_title('admin-page')
 check('管理员作品永久', adminp and adminp['share_expires_at'] is None)
