@@ -1278,9 +1278,12 @@ def _seo_ctx(page):
         'dateModified': page['updated'] or page['created'],
         'url': canonical,
     }
+    # 模板以 |safe 输出 JSON-LD，必须把 < > & 转成 JSON 的 \uXXXX 转义：
+    # 否则标题里的 </script> 会闭合 script 标签形成 XSS（转义后 JSON 仍合法、浏览器不会截断）。
+    ld_json = json.dumps(ld, ensure_ascii=False).replace('<', '\\u003c').replace('>', '\\u003e').replace('&', '\\u0026')
     return {
         'page_text': text,
-        'seo_ld': json.dumps(ld, ensure_ascii=False),
+        'seo_ld': ld_json,
         'canonical': canonical,
         'og_image': SITE_URL + url_for('og_image', slug=page['slug']),
     }

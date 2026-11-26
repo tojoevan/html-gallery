@@ -127,6 +127,16 @@ check('首页 FAQ 自包含段落', '作品链接会过期吗' in home and '换�
 gone = body('/gone-nonexistent')
 check('410 页 noindex', 'noindex' in gone)
 
+# ── 8. JSON-LD 注入防护（标题含 </script> 不得闭合 script 标签）──────────────
+evil = '</script><svg onload=alert(1)>'
+evil_pid = mk(evil)
+evil_page = body('/p/' + slug_of(evil_pid))
+check('恶意标题不原样出现在 JSON-LD', '</script><svg' not in evil_page)
+check('恶意标题已转义为 \\u003c', '\\u003c/script\\u003e' in evil_page)
+m = re.search(r'<script type="application/ld\+json">(.*?)</script>', evil_page, re.S)
+check('JSON-LD 块仍可被解析且内容完整',
+      bool(m) and json.loads(m.group(1))['name'] == evil)
+
 failed = [n for n, c, _ in results if not c]
 print('\n%d/%d 通过' % (len(results) - len(failed), len(results)))
 if failed:
