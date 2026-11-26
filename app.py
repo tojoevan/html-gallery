@@ -344,7 +344,7 @@ def identity_required(f):
 
 
 def _delete_pages_cascade(db, page_ids):
-    """删除作品并清掉其点赞/评论/举报，避免留下孤儿行。调用方负责 commit。"""
+    """删除作品并清掉其点赞/评论/举报/别名，避免留下孤儿行。调用方负责 commit。"""
     ids = [int(i) for i in page_ids]
     if not ids:
         return 0
@@ -352,6 +352,7 @@ def _delete_pages_cascade(db, page_ids):
     db.execute('DELETE FROM likes WHERE page_id IN (%s)' % marks, ids)
     db.execute('DELETE FROM comments WHERE page_id IN (%s)' % marks, ids)
     db.execute('DELETE FROM reports WHERE page_id IN (%s)' % marks, ids)
+    db.execute('DELETE FROM page_aliases WHERE page_id IN (%s)' % marks, ids)
     return db.execute('DELETE FROM pages WHERE id IN (%s)' % marks, ids).rowcount
 
 
@@ -1083,15 +1084,12 @@ def delete_account():
         return redirect(url_for('settings'))
 
     page_ids = [r['id'] for r in db.execute('SELECT id FROM pages WHERE user_id=?', (uid,))]
-    if page_ids:
-        marks = ','.join('?' * len(page_ids))
-        db.execute('DELETE FROM likes WHERE page_id IN (%s)' % marks, page_ids)
-        db.execute('DELETE FROM comments WHERE page_id IN (%s)' % marks, page_ids)
-        db.execute('DELETE FROM reports WHERE page_id IN (%s)' % marks, page_ids)
+    # 作品及其关联（点赞/评论/举报/别名）统一走 cascade；下面三行清掉的是
+    # 该用户发给别人作品的互动，维度不同，必须单独处理。
+    _delete_pages_cascade(db, page_ids)
     db.execute('DELETE FROM likes WHERE user_id=?', (uid,))
     db.execute('DELETE FROM comments WHERE user_id=?', (uid,))
     db.execute('DELETE FROM reports WHERE reporter_id=?', (uid,))
-    db.execute('DELETE FROM pages WHERE user_id=?', (uid,))
     db.execute('DELETE FROM users WHERE id=?', (uid,))
     db.commit()
     session.clear()
