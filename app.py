@@ -413,6 +413,38 @@ def _recover_hit(ip):
     _recover_hits.setdefault(ip, []).append(now)
 
 
+# ── 上传频率限制（P2，2026-11-27）────────────────────────────────────────────
+# 只挡「同一 IP 短时间反复发作品」的刷量/灌水，不影响正常试用：
+#   每分钟最多 6 次，每小时最多 40 次。计数按真实 IP（ProxyFix 已解 X-Forwarded-For）。
+# 与找回码限流一样是单进程内存桶，重启即清；gunicorn 保持 1 worker 以维持语义。
+PUBLISH_MINUTE_MAX = int(os.environ.get('GALLERY_PUBLISH_PER_MIN', '6'))
+PUBLISH_HOUR_MAX = int(os.environ.get('GALLERY_PUBLISH_PER_HOUR', '40'))
+PUBLISH_RATE_ENABLED = os.environ.get('GALLERY_PUBLISH_RATE', '1') != '0'
+_publish_hits = {}  # ip -> [时间戳]
+
+
+def _publish_rate_ok(ip):
+    """检查限流并记录一次成功发布；返回 False 表示应拒绝（429）。"""
+    # 测试环境跳过（所有用例同 IP，不该互相挤占额度）；生产可用环境变量整体关闭
+    if app.config.get('TESTING') or not PUBLISH_RATE_ENABLED:
+        return True
+    now = time.time()
+    hits = [t for t in _publish_hits.get(ip, []) if now - t < 3600]
+    if sum(1 for t in hits if now - t < 60) >= PUBLISH_MINUTE_MAX:
+        _publish_hits[ip] = hits
+        return False
+    if len(hits) >= PUBLISH_HOUR_MAX:
+        _publish_hits[ip] = hits
+        return False
+    hits.append(now)
+    _publish_hits[ip] = hits
+    # 桶太多时清掉长时间不活跃的 IP，避免内存无上限增长
+    if len(_publish_hits) > 2000:
+        for k in [k for k, v in _publish_hits.items() if not v or now - v[-1] > 3600]:
+            _publish_hits.pop(k, None)
+    return True
+
+
 # ── 过期策略（2026-11-26 更新）────────────────────────────────────────────────
 # 过期只影响「对外可见性」（访客 410），**仍不做任何自动删除**：
 #   1) 过期作品进入「回收站」（惰性判定：share_expires_at 已过，不落额外状态字段）；
@@ -887,6 +919,12 @@ def new_page():
                                                           'visibility': visibility,
                                                           'is_public': 1 if visibility == 'public' else 0},
                                    mode='new', error=error)
+        if not _publish_rate_ok(request.remote_addr or 'unknown'):
+            return render_template('editor.html', page={'title': title, 'html_source': html_source,
+                                                          'description': description,
+                                                          'visibility': visibility,
+                                                          'is_public': 1 if visibility == 'public' else 0},
+                                   mode='new', error='发布太频繁，请稍后再试（每分钟最多 6 次）。'), 429
         db = get_db()
         _insert_page(title, html_source, description, visibility, db)
         db.commit()
@@ -1374,6 +1412,8 @@ def publish_batch():
         if error:
             return jsonify(ok=False, error=error), 400
         prepared.append((title, html_source, description, vis))
+    if not _publish_rate_ok(request.remote_addr or 'unknown'):
+        return jsonify(ok=False, error='发布太频繁，请稍后再试（每分钟最多 6 次）。'), 429
     db = get_db()
     slugs = [_insert_page(t, h, d, p, db) for t, h, d, p in prepared]
     db.commit()
