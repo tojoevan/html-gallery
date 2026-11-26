@@ -15,11 +15,11 @@
 <meta property="og:title" content="{{ page.title }}">
 <meta property="og:description" content="{{ meta_desc | truncate(110, true, '…') }}">
 <meta property="og:url" content="{{ canonical }}">
-<meta property="og:image" content="{{ site_url }}/static/og-default.png">
+<meta property="og:image" content="{{ og_image | default(site_url ~ '/static/og-default.png') }}">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{{ page.title }}">
 <meta name="twitter:description" content="{{ meta_desc | truncate(110, true, '…') }}">
-<meta name="twitter:image" content="{{ site_url }}/static/og-default.png">
+<meta name="twitter:image" content="{{ og_image | default(site_url ~ '/static/og-default.png') }}">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify, abort, flash, make_response
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, abort, flash, make_response, current_app
 from flask.wrappers import Request as FlaskRequest
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -873,6 +873,22 @@ def renew_all_expiring():
 
 MAX_HTML_BYTES = 3 * 1024 * 1024  # 3MB 后端硬限制（前端已有校验，此处防绕过）
 
+# ── 标题规范化（SEO P2，2026-11-27）──────────────────────────────────────────
+# 导入源常带来全角 ASCII、连续空白与控制字符，进同一作品页会显得杂乱、
+# 也不利于标题作为 og:title / 搜索结果摘要。统一在写入前规范化，不改用户可见语义。
+# str.translate 的 key 必须是码位整数，不是字符
+_FULLWIDTH_ASCII = {0xFF01 + i: chr(0x21 + i) for i in range(0x5E)}
+_FULLWIDTH_ASCII[0x3000] = ' '  # 全角空格
+
+
+def _normalize_title(title):
+    if not title:
+        return '未命名'
+    s = str(title).translate(_FULLWIDTH_ASCII)
+    s = ''.join(ch if ch >= ' ' else ' ' for ch in s)  # 控制字符转空格
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s[:120] or '未命名'
+
 
 def _check_submission(title, html_source, description):
     """统一校验：3MB 上限 + 敏感词扫描。返回错误文案或 None。"""
@@ -892,6 +908,7 @@ def _insert_page(title, html_source, description, visibility, db):
     now = datetime.now().isoformat()
     slug = _new_slug(db)
     expiry = _expiry_for(session['user_id'], db)
+    title = _normalize_title(title)
     # is_public 与 visibility 同步写：前者维持「进画廊」旧语义，首页查询无需改动
     db.execute(
         '''INSERT INTO pages (user_id,title,slug,html_source,description,is_public,visibility,
@@ -954,6 +971,7 @@ def edit_page(page_id):
                                                             is_public=1 if visibility == 'public' else 0),
                                    mode='edit', error=error)
         now = datetime.now().isoformat()
+        title = _normalize_title(title)
         # 内容变更后已重新扫描通过，恢复审核状态（举报导致的 rejected 也随新内容解除）
         db.execute(
             '''UPDATE pages SET title=?,html_source=?,description=?,is_public=?,visibility=?,
@@ -1212,10 +1230,38 @@ def _plain_text(source, limit=1500):
     return s
 
 
+def _html_with_alt(source, title):
+    """展示层补全图片 alt（SEO P2）：只给缺 alt 的 <img> 补，不改库中源码。
+    优先取 title 属性，其次 src 文件名，最后用作品标题兜底。"""
+    if not source:
+        return source
+    fallback = _html.escape((title or '图片').strip()[:80] or '图片', quote=True)
+
+    def _fix(m):
+        tag = m.group(0)
+        if re.search(r'\balt\s*=', tag, re.I):  # 已有 alt（含 alt=""）则尊重原样
+            return tag
+        tm = re.search(r'\btitle\s*=\s*["\']([^"\']*)["\']', tag, re.I)
+        if tm and tm.group(1).strip():
+            alt = _html.escape(tm.group(1).strip()[:120], quote=True)
+        else:
+            sm = re.search(r'\bsrc\s*=\s*["\']([^"\']+)["\']', tag, re.I)
+            name = ''
+            if sm:
+                name = os.path.basename(_html.unescape(sm.group(1)).split('?')[0])
+                name = os.path.splitext(name)[0]
+            alt = _html.escape(name.strip()[:120], quote=True) if name.strip() else fallback
+        # 插在 <img 之后，保留其余属性与顺序
+        return re.sub(r'^<img', '<img alt="%s"' % alt, tag, count=1, flags=re.I)
+
+    return re.sub(r'<img\b[^>]*>', _fix, source, flags=re.I)
+
+
 def _seo_ctx(page):
     """作品页的 SEO 上下文：只有可索引作品才给文本层与 CreativeWork 数据。"""
     if not _is_indexable(page):
-        return {'page_text': '', 'seo_ld': '', 'canonical': SITE_URL + url_for('preview', slug=page['slug'])}
+        return {'page_text': '', 'seo_ld': '', 'canonical': SITE_URL + url_for('preview', slug=page['slug']),
+                'og_image': SITE_URL + '/static/og-default.png'}
     text = _plain_text(page['html_source'])
     canonical = SITE_URL + url_for('preview', slug=page['slug'])
     desc = (page['description'] or '').strip()
@@ -1236,7 +1282,29 @@ def _seo_ctx(page):
         'page_text': text,
         'seo_ld': json.dumps(ld, ensure_ascii=False),
         'canonical': canonical,
+        'og_image': SITE_URL + url_for('og_image', slug=page['slug']),
     }
+
+
+@app.route('/og/<slug>.png')
+def og_image(slug):
+    """动态分享封面：仅对可索引作品生成，其余 404 落到静态默认图。"""
+    db = get_db()
+    page = db.execute('SELECT p.*, u.handle FROM pages p JOIN users u ON p.user_id=u.id'
+                      ' WHERE p.slug=?', (slug,)).fetchone()
+    if not page or not _is_indexable(page):
+        abort(404)
+    try:
+        import og_image as _og
+        png = _og.generate(page['title'], page['handle'] or '')
+    except Exception:
+        # 字体/Pillow 异常不应影响作品页，回退到静态图由模板处理
+        current_app.logger.warning('OG 封面生成失败 slug=%s', slug, exc_info=True)
+        abort(404)
+    resp = make_response(png)
+    resp.headers['Content-Type'] = 'image/png'
+    resp.headers['Cache-Control'] = 'public, max-age=86400'
+    return resp
 
 
 @app.route('/robots.txt')
@@ -1339,7 +1407,7 @@ def preview(slug):
         return resp
     return render_template(
         'preview.html', page=page,
-        html_source=page['html_source'],
+        html_source=_html_with_alt(page['html_source'], page['title']),
         current_user_id=session.get('user_id'),
         **_owner_expiry_ctx(page), **_seo_ctx(page)
     )
@@ -1363,7 +1431,7 @@ def view(slug):
     if page['slug'] != slug:
         return redirect(url_for('view', slug=page['slug']), 301)
     ctx = _fission_ctx(get_db(), page)
-    return render_template('view.html', page=page, html_source=page['html_source'],
+    return render_template('view.html', page=page, html_source=_html_with_alt(page['html_source'], page['title']),
                            **_owner_expiry_ctx(page), **ctx, **_seo_ctx(page))
 
 # ── API: 从链接导入作品源码 ──────────────────────────────────────────────────
@@ -1745,7 +1813,7 @@ def share(handle, slug):
     if page['slug'] != slug or page['handle'] != handle:
         return redirect(url_for('share', handle=page['handle'], slug=page['slug']), 301)
     ctx = _fission_ctx(get_db(), page)
-    return render_template('view.html', page=page, html_source=page['html_source'],
+    return render_template('view.html', page=page, html_source=_html_with_alt(page['html_source'], page['title']),
                            **_owner_expiry_ctx(page), **ctx, **_seo_ctx(page))
 
 if __name__ == '__main__':
