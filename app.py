@@ -5,7 +5,6 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 import sqlite3, os, re, secrets, time, hashlib, html as _html
 from datetime import datetime, timedelta
 from functools import wraps
-from urllib.parse import urlparse
 import moderation
 import link_import
 
@@ -605,6 +604,24 @@ def register():
         return render_template('auth.html', mode='register', error=error)
     return render_template('auth.html', mode='register')
 
+def _safe_next(url, default):
+    """只接受站内相对路径；协议相对地址与反斜杠变体一律回退默认。
+
+    不能用 urlparse 判定：浏览器会把 ///evil.com、/\\evil.com 等按协议相对地址
+    解析，但 urlparse 视其为 path（netloc 为空）。改用严格白名单，按浏览器的
+    解析规则从源头拒绝。
+    """
+    if not url or not isinstance(url, str):
+        return default
+    if not url.startswith('/'):
+        return default
+    if url.startswith('//') or url.startswith('/\\'):
+        return default
+    if '\\' in url or any(ord(c) < 0x20 for c in url):  # 反斜杠/控制字符会被浏览器规范化
+        return default
+    return url
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -616,11 +633,7 @@ def login():
             session['user_id'] = user['id']
             session['username'] = user['username']
             session.permanent = True
-            next_url = request.args.get('next') or url_for('dashboard')
-            # 只允许站内相对路径，防开放重定向（//evil.com 的 netloc 非空会被挡）
-            parsed = urlparse(next_url)
-            if parsed.netloc or not parsed.path.startswith('/'):
-                next_url = url_for('dashboard')
+            next_url = _safe_next(request.args.get('next'), url_for('dashboard'))
             return redirect(next_url)
         return render_template('auth.html', mode='login', error='用户名或密码错误')
     return render_template('auth.html', mode='login')

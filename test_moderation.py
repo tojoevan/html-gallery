@@ -128,9 +128,22 @@ html = client.get('/dashboard').get_data(as_text=True)
 check('守护者徽章显示', '守护者' in html)
 logout()
 
-# 9. next 开放重定向被挡
-r = client.post('/login?next=//evil.com', data={'username': 'bob', 'password': 'test12345'})
-check('开放重定向被挡', r.status_code == 302 and 'evil.com' not in r.headers.get('Location', ''))
+# 9. next 开放重定向被挡（协议相对地址 + 反斜杠变体全部回退站内）
+from urllib.parse import quote
+for payload in ['//evil.com', '///evil.com', '////evil.com', '/\\evil.com',
+                '/\\/evil.com', 'https://evil.com', 'javascript:alert(1)']:
+    logout()
+    r = client.post('/login?next=' + quote(payload, safe=''),
+                    data={'username': 'bob', 'password': 'test12345'})
+    loc = r.headers.get('Location', '')
+    check('开放重定向被挡 %s' % payload,
+          r.status_code == 302 and 'evil.com' not in loc and 'javascript:' not in loc, loc)
+logout()
+# 正常站内路径仍应保留
+r = client.post('/login?next=%2Fdashboard%3Fx%3D1',
+                data={'username': 'bob', 'password': 'test12345'})
+check('站内 next 正常保留', '/dashboard?x=1' in r.headers.get('Location', ''),
+      r.headers.get('Location', ''))
 
 # 10. 存量重扫幂等（import rescan 会重新 init，注意不影响结果）
 import importlib
