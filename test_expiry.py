@@ -242,7 +242,7 @@ check('纯净分享页访客无到期条', '<div class="expiry-bar">' not in sha
 check('仅链接作品 noindex', 'name="robots" content="noindex' in
       app_module.app.test_client().get('/p/' + unl['slug']).get_data(as_text=True))
 check('公开作品不加 noindex', 'name="robots"' not in
-      app_module.app.test_client().get('/p/' + pub['slug']).get_data(as_text=True))
+      app_module.app.test_client().get('/p/' + page_by_title('guest-renew')['slug']).get_data(as_text=True))
 
 # ── 11. 跨用户同名作品：裸链接不再串页 ─────────────────────────────────────
 one_owner = app_module.app.test_client()

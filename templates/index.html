@@ -7,6 +7,9 @@
 <title>HTML Gallery · 把 AI 对话与 HTML 作品一键发布成网页</title>
 <meta name="description" content="粘贴链接或源码，一键发布成可交互网页。支持 DeepSeek、豆包、元宝分享链接与任意网页 URL，免注册即可发布，作品可选公开或私密。">
 <link rel="canonical" href="{{ site_url }}/">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebSite","name":"HTML Gallery","url":"{{ site_url }}/","description":"把 AI 对话与 HTML 作品一键发布成可交互网页","inLanguage":"zh-CN"}
+</script>
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="HTML Gallery">
 <meta property="og:title" content="HTML Gallery · 把 AI 对话与 HTML 作品一键发布成网页">
@@ -163,6 +166,21 @@
     margin-top: 1.5rem;
   }
   .site-foot a { color: var(--accent); text-decoration: none; }
+
+  /* 说明性内容：给搜索引擎/AI 引擎一段可引用的自包含文字，视觉上放在列表之后 */
+  .about-block {
+    max-width: 860px; margin: 3rem auto 0; padding: 1.8rem 1.5rem;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  }
+  .about-block h2 { font-size: 1.1rem; margin-bottom: .7rem; color: var(--text); }
+  .about-block h3 { font-size: .95rem; margin: 1.2rem 0 .4rem; color: var(--text); }
+  .about-block p { font-size: .88rem; line-height: 1.8; color: #4a5068; }
+  .about-block details {
+    margin-top: .7rem; padding: .7rem .9rem; background: var(--bg);
+    border-radius: 8px; font-size: .88rem;
+  }
+  .about-block summary { cursor: pointer; font-weight: 600; color: var(--text); }
+  .about-block details p { margin-top: .5rem; }
 
   /* ── Card ── */
   .card {
@@ -354,6 +372,19 @@
     <a href="{{ url_for('privacy') }}">隐私与数据</a>
   </p>
 </div>
+
+<section class="about-block">
+  <h2>关于 HTML Gallery</h2>
+  <p>HTML Gallery 是一个把 AI 对话内容与 HTML 源码发布成可交互网页的工具。你不需要会写服务器代码，粘贴一段链接或源码，就能得到一个可以直接打开、可以分享给别人查看的作品页面。</p>
+  <h3>它能做什么</h3>
+  <p>把设计师的作品源码、AI 生成的交互页面、或者一段有价值的对话记录，变成有独立网址的网页。访客打开即可查看和交互，还可以点赞、评论。作品可选三种可见性：公开（出现在首页）、仅持链接（不进首页，知道链接就能看）、私密（只有你自己可见）。</p>
+  <h3>支持哪些来源</h3>
+  <p>支持直接粘贴 HTML 源码，也支持从主流 AI 对话工具的分享链接导入内容。导入后可以选择发布「对话记录版」或「代码作品版」。免注册即可发布，临时作品链接保留 3 天，可自助续期；注册后作品永久保存。</p>
+  <h3>常见问题</h3>
+  <details><summary>作品链接会过期吗？</summary><p>游客发布的作品链接默认 3 天有效，到期后不再对外展示，但作品数据会保留。作者可以续期，或用找回码换设备取回；管理员会在回收站确认保留还是删除。注册用户的作品永久有效。</p></details>
+  <details><summary>换了设备还能找回作品吗？</summary><p>可以。游客在「我的看板」生成一次性找回码并妥善保存，换设备或清除浏览器数据后，在登录页用找回码即可恢复临时身份和名下作品。</p></details>
+  <details><summary>我的作品会被搜索引擎收录吗？</summary><p>只有「公开 + 已审核 + 未过期」的作品会被收录。仅链接与私密作品不会出现在搜索引擎中。每个作品页都提供可复制的纯文本摘要，方便阅读与引用。</p></details>
+</section>
 
 <script>
   // 首页链接一键发布：导入后若有多份内容先让用户勾选，再走批量发布；单份走原 /new 路径

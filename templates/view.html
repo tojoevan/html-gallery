@@ -1,10 +1,25 @@
+{% set desc_raw = (page.description or '').strip() %}
+{% set meta_desc = (page.title ~ ' · 在 HTML Gallery 上查看这个可交互作品')
+   if (not desc_raw or desc_raw.startswith('从链接导入')) else desc_raw %}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ page.title }}</title>
+<title>{{ page.title }} · HTML Gallery</title>
 {% if visibility in ('unlisted', 'private') %}<meta name="robots" content="noindex,follow">{% endif %}
+<meta name="description" content="{{ meta_desc | truncate(110, true, '…') }}">
+<link rel="canonical" href="{{ canonical }}">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="HTML Gallery">
+<meta property="og:title" content="{{ page.title }}">
+<meta property="og:description" content="{{ meta_desc | truncate(110, true, '…') }}">
+<meta property="og:url" content="{{ canonical }}">
+<meta property="og:image" content="{{ site_url }}/static/og-default.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ page.title }}">
+<meta name="twitter:description" content="{{ meta_desc | truncate(110, true, '…') }}">
+<meta name="twitter:image" content="{{ site_url }}/static/og-default.png">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }

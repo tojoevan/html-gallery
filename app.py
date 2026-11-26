@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, j
 from flask.wrappers import Request as FlaskRequest
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.middleware.proxy_fix import ProxyFix
-import sqlite3, os, re, secrets, time, hashlib
+import sqlite3, os, re, secrets, time, hashlib, html as _html
 from datetime import datetime, timedelta
 from functools import wraps
 from urllib.parse import urlparse
@@ -1138,6 +1138,152 @@ def _owner_expiry_ctx(page):
     }
 
 
+# ── SEO / GEO 基础设施（2026-11-27）──────────────────────────────────────────
+# 作品正文在 iframe 里，搜索引擎与 AI 引擎看不到。给「公开 + 已审核 + 未过期」
+# 的作品生成一份纯文本摘要留在主文档，爬虫才读得到；私密/仅链接/待审/过期一律不生成。
+def _indexable_pages(db):
+    """可被搜索引擎收录的作品行：public + approved + 未过期。"""
+    rows = db.execute(
+        'SELECT p.*, u.handle FROM pages p JOIN users u ON u.id=p.user_id '
+        "WHERE p.visibility='public' AND p.review_status='approved' "
+        'ORDER BY p.id'
+    ).fetchall()
+    return [r for r in rows if not _is_expired(r)]
+
+
+def _is_indexable(page):
+    return (_visibility(page) == 'public'
+            and page['review_status'] == 'approved'
+            and not _is_expired(page))
+
+
+def _plain_text(source, limit=1500):
+    """从 HTML 里剥出可读文本：去掉 script/style/svg 内容与所有标签，
+    还原实体、压缩空白，超长截断（尽量断在句末）。data URI 图片不产生文本。"""
+    if not source:
+        return ''
+    s = re.sub(r'<(script|style|noscript|svg)\b[^>]*>.*?</\1>', ' ', source,
+               flags=re.I | re.S)
+    s = re.sub(r'<[^>]+>', ' ', s)
+    s = _html.unescape(s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    if len(s) > limit:
+        cut = s[:limit]
+        p = max(cut.rfind('。'), cut.rfind('！'), cut.rfind('？'), cut.rfind('. '))
+        s = (cut[:p + 1] if p > limit * 0.6 else cut).rstrip() + '…'
+    return s
+
+
+def _seo_ctx(page):
+    """作品页的 SEO 上下文：只有可索引作品才给文本层与 CreativeWork 数据。"""
+    if not _is_indexable(page):
+        return {'page_text': '', 'seo_ld': '', 'canonical': SITE_URL + url_for('preview', slug=page['slug'])}
+    text = _plain_text(page['html_source'])
+    canonical = SITE_URL + url_for('preview', slug=page['slug'])
+    desc = (page['description'] or '').strip()
+    if not desc or desc.startswith('从链接导入'):
+        desc = (page['title'] + ' · 一个可交互的 HTML 作品。' + text[:110])
+    import json
+    ld = {
+        '@context': 'https://schema.org',
+        '@type': 'CreativeWork',
+        'name': page['title'],
+        'description': desc[:300],
+        'author': {'@type': 'Person', 'name': page['handle'] or '匿名作者'},
+        'datePublished': page['created'],
+        'dateModified': page['updated'] or page['created'],
+        'url': canonical,
+    }
+    return {
+        'page_text': text,
+        'seo_ld': json.dumps(ld, ensure_ascii=False),
+        'canonical': canonical,
+    }
+
+
+@app.route('/robots.txt')
+def robots_txt():
+    body = (
+        'User-agent: *\n'
+        'Allow: /\n'
+        'Disallow: /admin\n'
+        'Disallow: /dashboard\n'
+        'Disallow: /settings\n'
+        'Disallow: /edit/\n'
+        'Disallow: /new\n'
+        'Disallow: /recover\n'
+        'Disallow: /recovery-code\n'
+        'Disallow: /delete\n'
+        'Disallow: /renew\n'
+        f'\nSitemap: {SITE_URL}/sitemap.xml\n'
+    )
+    resp = make_response(body)
+    resp.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    resp.headers['Cache-Control'] = 'public, max-age=3600'
+    return resp
+
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    from xml.sax.saxutils import escape as _xml_escape
+    db = get_db()
+    entries = []
+    for p in _indexable_pages(db):
+        loc = SITE_URL + url_for('preview', slug=p['slug'])
+        lastmod = (p['updated'] or p['created'] or '')[:10]
+        entries.append(
+            '  <url><loc>%s</loc>%s</url>' % (
+                _xml_escape(loc),
+                '<lastmod>%s</lastmod>' % _xml_escape(lastmod) if lastmod else '',
+            )
+        )
+    body = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            + '\n'.join(entries) + '\n</urlset>\n')
+    resp = make_response(body)
+    resp.headers['Content-Type'] = 'application/xml; charset=utf-8'
+    resp.headers['Cache-Control'] = 'public, max-age=3600'
+    return resp
+
+
+@app.route('/llms.txt')
+def llms_txt():
+    db = get_db()
+    count = len(_indexable_pages(db))
+    body = f"""# HTML Gallery
+
+> 一个把 HTML 片段、AI 对话生成的网页作品发布成可分享链接的平台。访客可在浏览器里直接打开并交互，无需登录。
+
+本站收录 {count} 个公开作品。作品正文通过 iframe 隔离运行以保证安全；每个作品页提供纯文本摘要，便于阅读与引用。
+
+## 站点用途
+
+- 发布：用户粘贴一段 HTML 源码，或一条 AI 对话分享链接，即可生成一个永久或临时的作品页。
+- 浏览：公开作品进入首页画廊，访客可直接查看、点赞、评论。
+- 分享：每个作品有短链接（/p/短码）与作者专属链接（/作者标识/短码）。
+
+## 支持的来源
+
+- 直接粘贴 HTML 源码。
+- 支持从主流 AI 对话工具的分享链接导入（对话记录会转排为可阅读的图文页）。
+
+## 典型用法
+
+- 想看某个作品的内容：打开作品页的「文本内容」区域，可复制文字。
+- 想发布作品：首页点「+ 新建」，粘贴源码或链接，选择可见性后发布。
+- 想找回临时作品：登录页点「用找回码恢复」，输入发布时生成的找回码。
+
+## 索引说明
+
+- 仅「公开 + 已审核 + 未过期」的作品可被收录；仅持链接与私密作品不收录。
+- 完整作品清单见 {SITE_URL}/sitemap.xml。
+"""
+    resp = make_response(body)
+    resp.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    resp.headers['Cache-Control'] = 'public, max-age=3600'
+    return resp
+
+
 @app.route('/p/<slug>')
 def preview(slug):
     page = _page_or_403(slug)
@@ -1157,7 +1303,7 @@ def preview(slug):
         'preview.html', page=page,
         html_source=page['html_source'],
         current_user_id=session.get('user_id'),
-        **_owner_expiry_ctx(page)
+        **_owner_expiry_ctx(page), **_seo_ctx(page)
     )
 
 
@@ -1180,7 +1326,7 @@ def view(slug):
         return redirect(url_for('view', slug=page['slug']), 301)
     ctx = _fission_ctx(get_db(), page)
     return render_template('view.html', page=page, html_source=page['html_source'],
-                           **_owner_expiry_ctx(page), **ctx)
+                           **_owner_expiry_ctx(page), **ctx, **_seo_ctx(page))
 
 # ── API: 从链接导入作品源码 ──────────────────────────────────────────────────
 # 只抓取并审核后返回前端，不入库；真正发布仍走 /new，复用既有 3MB + 敏感词校验。
@@ -1560,7 +1706,7 @@ def share(handle, slug):
         return redirect(url_for('share', handle=page['handle'], slug=page['slug']), 301)
     ctx = _fission_ctx(get_db(), page)
     return render_template('view.html', page=page, html_source=page['html_source'],
-                           **_owner_expiry_ctx(page), **ctx)
+                           **_owner_expiry_ctx(page), **ctx, **_seo_ctx(page))
 
 if __name__ == '__main__':
     app.run(debug=os.environ.get('FLASK_DEBUG') == '1', port=5050)

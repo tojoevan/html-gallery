@@ -9,7 +9,8 @@
 <title>{{ page.title }} · HTML Gallery</title>
 {% if visibility in ('unlisted', 'private') %}<meta name="robots" content="noindex,follow">{% endif %}
 <meta name="description" content="{{ meta_desc | truncate(110, true, '…') }}">
-<link rel="canonical" href="{{ site_url }}{{ request.path }}">
+<link rel="canonical" href="{{ canonical }}">
+{% if seo_ld %}<script type="application/ld+json">{{ seo_ld | safe }}</script>{% endif %}
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="HTML Gallery">
 <meta property="og:title" content="{{ page.title }}">
@@ -174,9 +175,28 @@
   }
 
   .empty-comments { text-align: center; color: var(--muted); font-size: .9rem; padding: 1.5rem; }
+  /* SEO/GEO 文本层：正文在 iframe 里爬虫读不到，这里放一份可展开的纯文本 */
+  .page-text { max-width: 860px; margin: 1.5rem auto 0; padding: 0 1.25rem; }
+  .page-text details {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: .85rem 1.1rem;
+  }
+  .page-text summary {
+    cursor: pointer; font-size: .9rem; font-weight: 600; color: var(--text);
+    list-style: none; display: flex; align-items: center; gap: .4rem;
+  }
+  .page-text summary::-webkit-details-marker { display: none; }
+  .page-text summary::before { content: '▸'; color: var(--accent); font-size: .8rem; }
+  .page-text details[open] summary::before { content: '▾'; }
+  .page-text .text-body {
+    margin-top: .9rem; padding-top: .9rem; border-top: 1px dashed var(--border);
+    font-size: .9rem; line-height: 1.85; color: #444a63;
+    white-space: pre-wrap; word-break: break-word; max-height: 22rem; overflow: auto;
+  }
 </style>
 </head>
 <body>
+{% if page_text %}<h1 style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;">{{ page.title }}</h1>{% endif %}
 
 <nav>
   <div class="nav-left">
@@ -226,6 +246,15 @@
   {% endif %}
   <iframe class="preview-frame" id="previewFrame" srcdoc="{{ html_source | e }}" sandbox="allow-scripts"></iframe>
 </div>
+
+{% if page_text %}
+<section class="page-text">
+  <details>
+    <summary>文本内容（供复制与检索）</summary>
+    <div class="text-body">{{ page_text }}</div>
+  </details>
+</section>
+{% endif %}
 
 <div class="comments-section">
   <div class="comments-head">评论 <span class="comments-count" id="commentsCount">0</span></div>
