@@ -41,7 +41,8 @@ nav = nav_of(anon)
 check('游客导航含找回码/登录/注册', '找回码' in nav and '登录' in nav and '注册' in nav)
 check('游客导航不含管理入口', '复审' not in nav and '回收站' not in nav)
 check('首页有页脚', '<footer class="site-foot">' in anon)
-check('首页说明行不串页脚样式', '<p class="list-note">' in anon and '<p class="site-foot">' not in anon)
+check('首页隐私入口只在页脚，不再单列说明行',
+      anon.count('href="/privacy"') == 1 and '<p class="list-note">' not in anon and '<p class="site-foot">' not in anon)
 check('游客导航靠品牌回首页', 'site-nav-brand' in nav and 'class="on">首页' not in nav)
 
 client.post('/new', data={'title': 'nav-a', 'html_source': '<body>a</body>',

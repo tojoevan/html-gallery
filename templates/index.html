@@ -160,14 +160,6 @@
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
     gap: 1.25rem;
   }
-  /* 卡片列表下方的说明行：独立 class，避免与 _footer.html 的 .site-foot 串样式 */
-  .list-note {
-    grid-column: 1 / -1;
-    text-align: center; font-size: .95rem; color: #4a5068; line-height: 1.7;
-    margin-top: 1.6rem;
-  }
-  .list-note a { color: var(--accent); text-decoration: none; }
-
   /* 说明性内容：给搜索引擎/AI 引擎一段可引用的自包含文字，视觉上放在列表之后 */
   .about-block {
     max-width: 860px; margin: 3rem auto 0; padding: 1.8rem 1.5rem;
@@ -368,10 +360,6 @@
       <p>还没有作品，<a href="{{ url_for('register') }}" style="color:var(--accent)">注册</a>后发布第一个吧！</p>
     </div>
   {% endif %}
-  <p class="list-note">
-    免注册 3 天有效 · 可自助续期 · 作品可选公开 / 仅链接 / 私密 ·
-    <a href="{{ url_for('privacy') }}">隐私与数据</a>
-  </p>
 </div>
 
 <section class="about-block">

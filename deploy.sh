@@ -30,7 +30,7 @@ EXCLUDES=(
   --exclude '.env' --exclude '.deploy.env'
   --exclude 'gallery.log' --exclude '.deploy-backup/'
   --exclude '__pycache__/' --exclude '*.pyc' --exclude '.git/'
-  --exclude '.DS_Store' --exclude '*.md' --exclude 'deploy.sh'
+  --exclude '.DS_Store' --exclude '*.md' --exclude 'deploy.sh' --exclude '.workbuddy/'
 )
 
 echo "==> [1/5] 检查服务器连通"
