@@ -18,7 +18,9 @@ DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'galle
 def main():
     apply = '--apply' in sys.argv
     count = moderation.reload_words()
-    print(f'词库加载: {count} 词（来源: {"外置" if os.path.exists(moderation._external_path()) else "内置种子"}）')
+    source = {'external': '外置', 'seed': '内置种子',
+              'none': '无（审核已失效）'}.get(moderation._loaded_source, '未知')
+    print(f'词库加载: {count} 词（来源: {source}）')
     if not os.path.exists(DB):
         print('数据库不存在:', DB)
         return

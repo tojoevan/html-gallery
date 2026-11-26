@@ -8,10 +8,16 @@
 """
 import os
 import re
+import logging
 from html import unescape
+
+log = logging.getLogger(__name__)
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 SEED_WORDS = os.path.join(PROJECT_ROOT, 'sensitive_words.txt')
+
+# 当前词库来源：external / seed / none，供运维诊断（rescan.py 会打印）
+_loaded_source = 'none'
 
 
 def _external_path():
@@ -20,21 +26,44 @@ def _external_path():
     return os.path.join(instance, 'sensitive_words.txt')
 
 
-def load_words():
-    """加载词库；外置文件存在则只用外置，否则用内置种子。"""
-    path = _external_path()
-    if not os.path.exists(path):
-        path = SEED_WORDS
+def _read_word_file(path):
+    """读一份词库；读取或解码失败由调用方捕获，不在本函数吞错。"""
     words = set()
-    try:
-        with open(path, encoding='utf-8') as f:
-            for line in f:
-                word = line.strip()
-                if word and not word.startswith('#'):
-                    words.add(word)
-    except OSError:
-        pass
+    with open(path, encoding='utf-8') as f:
+        for line in f:
+            word = line.strip()
+            if word and not word.startswith('#'):
+                words.add(word)
     return words
+
+
+def load_words():
+    """加载词库：外置优先；外置读取失败告警并回退内置种子。
+
+    两级都失败时返回空集（审核静默失效）但留 critical 日志——不 fail-closed
+    以免词库文件问题导致全站无法发布，但绝不再静默吞错。
+    """
+    global _loaded_source
+    external = _external_path()
+    if os.path.exists(external):
+        try:
+            words = _read_word_file(external)
+            if not words:
+                log.warning('外置词库为空，审核将失效：%s', external)
+            _loaded_source = 'external'
+            return words
+        except (OSError, UnicodeError) as e:
+            log.error('外置词库读取失败，回退内置种子库：%s（%s）', external, e)
+    try:
+        words = _read_word_file(SEED_WORDS)
+        if not words:
+            log.warning('内置种子词库为空，审核将失效：%s', SEED_WORDS)
+        _loaded_source = 'seed'
+        return words
+    except (OSError, UnicodeError) as e:
+        log.critical('内置种子词库也无法读取，敏感词审核已失效：%s（%s）', SEED_WORDS, e)
+        _loaded_source = 'none'
+        return set()
 
 
 class DFA:
