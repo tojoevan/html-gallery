@@ -1403,10 +1403,23 @@ def preview(slug):
         # 首页缩略图专用：只吐作品源码本身，不带站点外壳。
         # 卡片用 <iframe src="?embed=1"> 而不是内联 srcdoc，首页 HTML 不会随作品体积膨胀，
         # 也就没有「图文内容较大」的占位卡了。lazy 加载 + 短缓存，重复访问不吃流量。
+        #
+        # 安全：这个端点吐的是原始用户 HTML，若被当顶层页面打开即与站点同源，脚本可
+        # fetch 站内 API（带 SameSite=Lax cookie）。两层防护：
+        #   1) CSP sandbox allow-scripts：无论顶层/嵌入都把文档降为 opaque origin，
+        #      脚本能跑（缩略动画不受影响），但读不到站点 cookie / API。
+        #   2) Sec-Fetch-Dest=document（浏览器顶层导航）直接 403；iframe 请求或无此头
+        #      （老浏览器/爬虫）放行，靠第 1 层兜底。
+        if request.headers.get('Sec-Fetch-Dest') == 'document':
+            abort(403)
         resp = make_response(page['html_source'] or '')
         resp.headers['Content-Type'] = 'text/html; charset=utf-8'
         resp.headers['Cache-Control'] = 'public, max-age=600'
         resp.headers['X-Robots-Tag'] = 'noindex'
+        resp.headers['Content-Security-Policy'] = 'sandbox allow-scripts'
+        # 缓存须按 Sec-Fetch-Dest 区分：否则 iframe 的 200 会被 document 请求复用，
+        # 绕过上面的 403 分支（CSP 仍在缓存里兜底，但两层防护应各自生效）。
+        resp.headers['Vary'] = 'Sec-Fetch-Dest'
         return resp
     return render_template(
         'preview.html', page=page,

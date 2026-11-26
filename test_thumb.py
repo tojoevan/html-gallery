@@ -52,6 +52,18 @@ check('大作品也能出缩略图', r.status_code == 200 and 'BIGMARK' in body,
 check('缩略响应只含作品源码', '<body>' in body and 'card-title' not in body)
 check('缩略响应带短缓存', 'max-age=600' in (r.headers.get('Cache-Control') or ''))
 check('缩略响应 noindex', 'noindex' in (r.headers.get('X-Robots-Tag') or ''))
+check('缩略响应带 CSP sandbox',
+      'sandbox allow-scripts' in (r.headers.get('Content-Security-Policy') or ''))
+check('缩略响应 Vary 区分请求类型',
+      'Sec-Fetch-Dest' in (r.headers.get('Vary') or ''))
+
+# 顶层导航（Sec-Fetch-Dest: document）必须拒绝，iframe 与无头请求放行
+check('顶层直接打开 embed 被 403',
+      client.get(f'/p/{small_slug}?embed=1',
+                 headers={'Sec-Fetch-Dest': 'document'}).status_code == 403)
+check('iframe 请求 embed 正常',
+      client.get(f'/p/{small_slug}?embed=1',
+                 headers={'Sec-Fetch-Dest': 'iframe'}).status_code == 200)
 
 check('小作品缩略同样可用', client.get(f'/p/{small_slug}?embed=1').status_code == 200)
 check('游客访问私密缩略被拒', app_module.app.test_client()
