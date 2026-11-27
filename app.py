@@ -288,6 +288,43 @@ def _persist_session():
         session.permanent = True
 
 
+def _origin_allowed(origin):
+    """Origin 必须与站点配置 SITE_URL 一致（默认端口可省略）。
+
+    只信浏览器设置的 Origin，不信 Host / X-Forwarded-Host —— 后者会被反向代理改写，
+    而 Origin 由浏览器按页面地址生成，JS 无法伪造。
+    """
+    from urllib.parse import urlparse  # 只解析绝对 URL，与 _safe_next 的站内路径校验无关
+    try:
+        parsed, site = urlparse(origin), urlparse(SITE_URL)
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+            return False
+
+        def norm(netloc, scheme):
+            netloc = netloc.lower()
+            default = ':443' if scheme == 'https' else ':80'
+            return netloc[:-len(default)] if netloc.endswith(default) else netloc
+
+        return norm(parsed.netloc, parsed.scheme) == norm(site.netloc, site.scheme)
+    except ValueError:
+        return False
+
+
+@app.before_request
+def _reject_cross_origin_writes():
+    """轻量 CSRF 防护，补 SameSite=Lax 的两个漏口：同站子域、不支持 SameSite 的老浏览器。
+
+    只校验带 Origin 的写请求；无 Origin（curl / API 客户端 / 测试）放行。
+    """
+    if request.method not in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        return None
+    origin = request.headers.get('Origin')
+    if not origin:
+        return None
+    if not _origin_allowed(origin):
+        return abort(403)
+
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
