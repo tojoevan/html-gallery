@@ -169,15 +169,24 @@
     display: flex; align-items: center; gap: .6rem; }
   .about-icon { width: 28px; height: 28px; flex: none; border-radius: 8px; background: var(--accent-light);
     display: inline-flex; align-items: center; justify-content: center; color: var(--accent); }
-  .about-block > p { font-size: .9rem; line-height: 1.8; color: #4a5068; margin-bottom: 1.4rem; }
-  .about-features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 14px; margin-bottom: 1.6rem; }
-  .about-feature { background: var(--bg); border-radius: 10px; padding: 14px 15px; }
-  .about-feature h3 { font-size: .95rem; margin-bottom: .45rem; color: var(--text);
-    display: flex; align-items: center; gap: .5rem; }
-  .about-feature h3 svg { color: var(--accent); flex: none; }
-  .about-feature p { font-size: .88rem; line-height: 1.75; color: #5a6075; }
-  .about-block > h3 { font-size: .95rem; margin-bottom: .6rem; color: var(--text); }
+  /* 视觉层：三张图标卡，只留最短信息 */
+  .about-highlights { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .about-hl { background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 13px; text-align: center; }
+  .about-hl-icon { width: 38px; height: 38px; margin: 0 auto .55rem; border-radius: 10px;
+    background: var(--accent-light); color: var(--accent); display: flex; align-items: center; justify-content: center; }
+  .about-hl h3 { font-size: .92rem; color: var(--text); margin-bottom: .35rem; }
+  .about-hl p { font-size: .82rem; line-height: 1.6; color: #5a6075; }
+  /* SEO 层：完整原文默认折叠，文字仍在 DOM 中 */
+  .about-full { margin-top: 1.25rem; border-top: 1px solid var(--border); padding-top: .85rem; }
+  .about-full > summary { cursor: pointer; font-size: .85rem; color: var(--accent);
+    list-style: none; display: flex; align-items: center; justify-content: center; gap: .35rem; }
+  .about-full > summary::-webkit-details-marker { display: none; }
+  .about-full > summary::after { content: '⌄'; font-size: 1.1rem; line-height: 1; transition: transform .15s; }
+  .about-full[open] > summary::after { transform: rotate(180deg); }
+  .about-full-body { padding: 1rem .1rem 0; }
+  .about-full-body > p { font-size: .88rem; line-height: 1.8; color: #4a5068; margin-bottom: .8rem; }
+  .about-full-body > h3 { font-size: .92rem; margin: 1.1rem 0 .45rem; color: var(--text); }
   .about-faq { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
   .about-faq details { border-bottom: 1px solid var(--border); font-size: .9rem; }
   .about-faq details:last-child { border-bottom: none; }
@@ -189,6 +198,7 @@
   .about-faq summary::after { content: '›'; margin-left: auto; color: var(--muted); transition: transform .15s; }
   .about-faq details[open] summary::after { transform: rotate(90deg); }
   .about-faq details p { padding: 0 1rem .9rem 1.2rem; font-size: .88rem; line-height: 1.8; color: #4a5068; }
+  @media (max-width: 640px) { .about-highlights { grid-template-columns: 1fr; } }
 
   /* ── Card ── */
   .card {
@@ -379,23 +389,39 @@
 
 <section class="about-block">
   <h2><span class="about-icon"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.5" width="12" height="11" rx="2"/><path d="M5 6h6M5 9h6M5 11.5h3"/></svg></span>关于 HTML Gallery</h2>
-  <p>HTML Gallery 是一个把 AI 对话内容与 HTML 源码发布成可交互网页的工具。你不需要会写服务器代码，粘贴一段链接或源码，就能得到一个可以直接打开、可以分享给别人查看的作品页面。</p>
-  <div class="about-features">
-    <div class="about-feature">
-      <h3><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11M2.5 8h8M2.5 11.5h5"/></svg>它能做什么</h3>
+  <div class="about-highlights">
+    <div class="about-hl">
+      <div class="about-hl-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 8-4 4 4 4M15 8l4 4-4 4M13 5l-2 14"/></svg></div>
+      <h3>粘贴即网页</h3>
+      <p>HTML 源码或 AI 分享链接，一键生成可交互作品页</p>
+    </div>
+    <div class="about-hl">
+      <div class="about-hl-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></svg></div>
+      <h3>三种可见性</h3>
+      <p>公开 / 仅链接 / 私密，按需要决定谁能看</p>
+    </div>
+    <div class="about-hl">
+      <div class="about-hl-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 11l4 4 4-4M4 20h16"/></svg></div>
+      <h3>免注册发布</h3>
+      <p>临时链接保留 3 天，可续期；注册后永久保存</p>
+    </div>
+  </div>
+  <details class="about-full">
+    <summary>查看完整说明</summary>
+    <div class="about-full-body">
+      <p>HTML Gallery 是一个把 AI 对话内容与 HTML 源码发布成可交互网页的工具。你不需要会写服务器代码，粘贴一段链接或源码，就能得到一个可以直接打开、可以分享给别人查看的作品页面。</p>
+      <h3>它能做什么</h3>
       <p>把设计师的作品源码、AI 生成的交互页面、或者一段有价值的对话记录，变成有独立网址的网页。访客打开即可查看和交互，还可以点赞、评论。作品可选三种可见性：公开（出现在首页）、仅持链接（不进首页，知道链接就能看）、私密（只有你自己可见）。</p>
-    </div>
-    <div class="about-feature">
-      <h3><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3 2.5 8 6 13M10 3l3.5 5L10 13"/></svg>支持哪些来源</h3>
+      <h3>支持哪些来源</h3>
       <p>支持直接粘贴 HTML 源码，也支持从主流 AI 对话工具的分享链接导入内容。导入后可以选择发布「对话记录版」或「代码作品版」。免注册即可发布，临时作品链接保留 3 天，可自助续期；注册后作品永久保存。</p>
+      <h3>常见问题</h3>
+      <div class="about-faq">
+        <details><summary>作品链接会过期吗？</summary><p>游客发布的作品链接默认 3 天有效，到期后不再对外展示，但作品数据会保留。作者可以续期，或用找回码换设备取回；管理员会在回收站确认保留还是删除。注册用户的作品永久有效。</p></details>
+        <details><summary>换了设备还能找回作品吗？</summary><p>可以。游客在「我的看板」生成一次性找回码并妥善保存，换设备或清除浏览器数据后，在登录页用找回码即可恢复临时身份和名下作品。</p></details>
+        <details><summary>我的作品会被搜索引擎收录吗？</summary><p>只有「公开 + 已审核 + 未过期」的作品会被收录。仅链接与私密作品不会出现在搜索引擎中。每个作品页都提供可复制的纯文本摘要，方便阅读与引用。</p></details>
+      </div>
     </div>
-  </div>
-  <h3>常见问题</h3>
-  <div class="about-faq">
-    <details><summary>作品链接会过期吗？</summary><p>游客发布的作品链接默认 3 天有效，到期后不再对外展示，但作品数据会保留。作者可以续期，或用找回码换设备取回；管理员会在回收站确认保留还是删除。注册用户的作品永久有效。</p></details>
-    <details><summary>换了设备还能找回作品吗？</summary><p>可以。游客在「我的看板」生成一次性找回码并妥善保存，换设备或清除浏览器数据后，在登录页用找回码即可恢复临时身份和名下作品。</p></details>
-    <details><summary>我的作品会被搜索引擎收录吗？</summary><p>只有「公开 + 已审核 + 未过期」的作品会被收录。仅链接与私密作品不会出现在搜索引擎中。每个作品页都提供可复制的纯文本摘要，方便阅读与引用。</p></details>
-  </div>
+  </details>
 </section>
 
 <script>
